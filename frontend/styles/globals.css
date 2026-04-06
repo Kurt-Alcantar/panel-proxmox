@@ -1,13 +1,13 @@
 :root {
-  --bg: #0b1020;
-  --panel: #121932;
-  --panel-2: #18213f;
-  --border: #2b3763;
-  --text: #edf2ff;
-  --muted: #a9b4d0;
-  --primary: #5b8cff;
-  --primary-hover: #7aa2ff;
-  --success: #16a34a;
+  --bg: #0f0a1f;
+  --panel: #171129;
+  --panel-2: #21183a;
+  --border: #3b2d63;
+  --text: #f3edff;
+  --muted: #b8abd9;
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
+  --success: #22c55e;
   --warning: #f59e0b;
   --danger: #dc2626;
   --danger-hover: #ef4444;
@@ -23,7 +23,7 @@ html,
 body {
   padding: 0;
   margin: 0;
-  background: linear-gradient(180deg, #08101f 0%, #0b1020 100%);
+  background: linear-gradient(180deg, #0b0717 0%, #120b24 55%, #1a1030 100%);
   color: var(--text);
   font-family: Arial, sans-serif;
 }
@@ -179,9 +179,9 @@ input {
 }
 
 .badge.unknown {
-  background: rgba(245, 158, 11, 0.12);
-  color: #fcd34d;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(139, 92, 246, 0.16);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.4);
 }
 
 .actions {

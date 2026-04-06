@@ -7,18 +7,21 @@ import {
 import * as jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 
+const KEYCLOAK_BASE_URL = 'http://192.168.10.163:8080';
+const REALM = 'master';
+
 const client = jwksClient({
-  jwksUri: 'http://keycloak:8080/realms/master/protocol/openid-connect/certs'
+  jwksUri: `${KEYCLOAK_BASE_URL}/realms/${REALM}/protocol/openid-connect/certs`
 });
 
 function getKey(header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) {
   client.getSigningKey(header.kid as string, function (err, key) {
-    if (err) {
-      callback(err, undefined);
+    if (err || !key) {
+      callback(err || new Error('Signing key not found'), undefined);
       return;
     }
-    const signingKey = key?.getPublicKey();
-    callback(null, signingKey);
+
+    callback(null, key.getPublicKey());
   });
 }
 
@@ -40,10 +43,11 @@ export class AuthGuard implements CanActivate {
         getKey,
         {
           algorithms: ['RS256'],
-          issuer: 'http://192.168.10.163:8080/realms/master'
+          issuer: `${KEYCLOAK_BASE_URL}/realms/${REALM}`
         },
         (err, decoded) => {
           if (err || !decoded) {
+            console.error('JWT verify error:', err);
             return reject(new UnauthorizedException('Invalid token'));
           }
 

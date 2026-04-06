@@ -3,9 +3,10 @@ import { Module } from '@nestjs/common';
 import { VmController } from './vm.controller';
 import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
+import { AuthController } from './auth.controller';
 
 @Module({
-  controllers: [VmController],
+  controllers: [VmController, AuthController],
   providers: [PrismaService, ProxmoxService],
 })
 class AppModule {}

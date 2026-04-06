@@ -14,18 +14,15 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const params = new URLSearchParams()
-      params.append('client_id', 'admin-cli')
-      params.append('grant_type', 'password')
-      params.append('username', username)
-      params.append('password', password)
-
-      const res = await fetch('http://192.168.10.163:8080/realms/master/protocol/openid-connect/token', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/json'
         },
-        body: params.toString()
+        body: JSON.stringify({
+          username,
+          password
+        })
       })
 
       const data = await res.json()

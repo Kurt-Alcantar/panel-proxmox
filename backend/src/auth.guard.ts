@@ -42,8 +42,7 @@ export class AuthGuard implements CanActivate {
         token,
         getKey,
         {
-          algorithms: ['RS256'],
-          issuer: `${KEYCLOAK_INTERNAL_URL}/realms/${REALM}`
+          algorithms: ['RS256']
         },
         (err, decoded) => {
           if (err || !decoded) {

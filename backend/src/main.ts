@@ -2,10 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { VmController } from './vm.controller';
 import { PrismaService } from './prisma.service';
+import { ProxmoxService } from './proxmox.service';
+
+
 
 @Module({
   controllers: [VmController],
-  providers: [PrismaService],
+  providers: [PrismaService, ProxmoxService],
 })
 class AppModule {}
 

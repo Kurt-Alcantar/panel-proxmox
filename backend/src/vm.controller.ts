@@ -1,14 +1,21 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { PrismaService } from './prisma.service';
-import { AuthGuard } from './auth.guard';
+import { Controller, Get } from '@nestjs/common';
+import { ProxmoxService } from './proxmox.service';
 
 @Controller('vms')
 export class VmController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private proxmox: ProxmoxService) {}
 
-  //@UseGuards(AuthGuard)
   @Get()
   async list() {
-    return this.prisma.vm_inventory.findMany();
+    const nodes = await this.proxmox.getNodes();
+
+    let allVMs = [];
+
+    for (const node of nodes) {
+      const vms = await this.proxmox.getVMs(node.node);
+      allVMs.push(...vms);
+    }
+
+    return allVMs;
   }
 }

@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model proxmox_pools {
+  id          String   @id @default(uuid())
+  external_id String   @unique
+  name        String
+}
+
 model vm_inventory {
   id              String   @id @default(uuid())
   vmid            Int      @unique

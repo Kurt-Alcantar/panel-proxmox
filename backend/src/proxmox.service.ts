@@ -20,7 +20,6 @@ export class ProxmoxService {
       headers: this.headers,
       httpsAgent: this.agent
     });
-
     return res.data.data;
   }
 
@@ -29,12 +28,43 @@ export class ProxmoxService {
       headers: this.headers,
       httpsAgent: this.agent
     });
+    return res.data.data;
+  }
 
+  async getPools() {
+    const res = await axios.get(`${this.baseUrl}/pools`, {
+      headers: this.headers,
+      httpsAgent: this.agent
+    });
+    return res.data.data;
+  }
+
+  async getPool(poolId: string) {
+    const res = await axios.get(`${this.baseUrl}/pools/${encodeURIComponent(poolId)}`, {
+      headers: this.headers,
+      httpsAgent: this.agent
+    });
     return res.data.data;
   }
 
   async getAllVMs() {
     const nodes = await this.getNodes();
+    const pools = await this.getPools();
+
+    const vmPoolMap = new Map<number, string>();
+
+    for (const pool of pools) {
+      const detail = await this.getPool(pool.poolid);
+
+      if (detail?.members?.length) {
+        for (const member of detail.members) {
+          if (member.type === 'qemu' && member.vmid) {
+            vmPoolMap.set(member.vmid, pool.poolid);
+          }
+        }
+      }
+    }
+
     const allVMs: any[] = [];
 
     for (const node of nodes) {
@@ -45,6 +75,7 @@ export class ProxmoxService {
           vmid: vm.vmid,
           name: vm.name ?? null,
           node: node.node,
+          pool_id: vmPoolMap.get(vm.vmid) ?? null,
           status: vm.status ?? null,
           cpu: vm.cpus ?? null,
           memory: vm.maxmem ?? null,

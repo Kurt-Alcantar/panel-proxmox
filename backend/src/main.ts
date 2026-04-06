@@ -4,8 +4,6 @@ import { VmController } from './vm.controller';
 import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
 
-
-
 @Module({
   controllers: [VmController],
   providers: [PrismaService, ProxmoxService],

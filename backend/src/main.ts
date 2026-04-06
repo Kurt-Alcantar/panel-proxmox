@@ -1,16 +1,11 @@
 import { NestFactory } from '@nestjs/core';
-import { Module, Controller, Get } from '@nestjs/common';
-
-@Controller()
-class AppController {
-  @Get()
-  getHello() {
-    return { status: 'ok', service: 'backend' };
-  }
-}
+import { Module } from '@nestjs/common';
+import { VmController } from './vm.controller';
+import { PrismaService } from './prisma.service';
 
 @Module({
-  controllers: [AppController],
+  controllers: [VmController],
+  providers: [PrismaService],
 })
 class AppModule {}
 

@@ -4,10 +4,11 @@ import { VmController } from './vm.controller';
 import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
 import { AuthController } from './auth.controller';
+import { AuditService } from './audit.service';
 
 @Module({
   controllers: [VmController, AuthController],
-  providers: [PrismaService, ProxmoxService],
+  providers: [PrismaService, ProxmoxService,AuditService],
 })
 class AppModule {}
 

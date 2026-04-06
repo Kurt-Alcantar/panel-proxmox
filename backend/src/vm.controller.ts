@@ -2,12 +2,14 @@ import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
 import { AuthGuard } from './auth.guard';
+import { AuditService } from './audit.service';
 
 @Controller()
 export class VmController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly proxmox: ProxmoxService
+    private readonly proxmox: ProxmoxService,
+    private readonly audit: AuditService
   ) {}
 
   @UseGuards(AuthGuard)
@@ -31,23 +33,36 @@ export class VmController {
       where: { code }
     });
 
-    if (!tenantGroup) return [];
+    if (!tenantGroup) {
+      return [];
+    }
 
     const bindings = await this.prisma.tenant_group_pools.findMany({
       where: { tenant_group_id: tenantGroup.id }
     });
 
     const proxmoxPoolIds = bindings.map((b) => b.proxmox_pool_id);
-    if (!proxmoxPoolIds.length) return [];
+
+    if (!proxmoxPoolIds.length) {
+      return [];
+    }
 
     const pools = await this.prisma.proxmox_pools.findMany({
-      where: { id: { in: proxmoxPoolIds } }
+      where: {
+        id: {
+          in: proxmoxPoolIds
+        }
+      }
     });
 
     const poolNames = pools.map((p) => p.external_id);
 
     const vms = await this.prisma.vm_inventory.findMany({
-      where: { pool_id: { in: poolNames } },
+      where: {
+        pool_id: {
+          in: poolNames
+        }
+      },
       orderBy: { vmid: 'asc' }
     });
 
@@ -62,29 +77,45 @@ export class VmController {
   @Get('my/vms')
   async myVMs(@Req() req: any) {
     const keycloakId = req.user?.sub;
-    if (!keycloakId) return [];
+
+    if (!keycloakId) {
+      return [];
+    }
 
     const user = await this.prisma.users.findFirst({
       where: { keycloak_id: keycloakId }
     });
 
-    if (!user?.tenant_group_id) return [];
+    if (!user?.tenant_group_id) {
+      return [];
+    }
 
     const bindings = await this.prisma.tenant_group_pools.findMany({
       where: { tenant_group_id: user.tenant_group_id }
     });
 
     const poolIds = bindings.map((b) => b.proxmox_pool_id);
-    if (!poolIds.length) return [];
+
+    if (!poolIds.length) {
+      return [];
+    }
 
     const pools = await this.prisma.proxmox_pools.findMany({
-      where: { id: { in: poolIds } }
+      where: {
+        id: {
+          in: poolIds
+        }
+      }
     });
 
     const poolNames = pools.map((p) => p.external_id);
 
     const vms = await this.prisma.vm_inventory.findMany({
-      where: { pool_id: { in: poolNames } },
+      where: {
+        pool_id: {
+          in: poolNames
+        }
+      },
       orderBy: { vmid: 'asc' }
     });
 
@@ -144,7 +175,9 @@ export class VmController {
     for (const pool of pools) {
       await this.prisma.proxmox_pools.upsert({
         where: { external_id: pool.poolid },
-        update: { name: pool.poolid },
+        update: {
+          name: pool.poolid
+        },
         create: {
           external_id: pool.poolid,
           name: pool.poolid
@@ -157,34 +190,90 @@ export class VmController {
 
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/start')
-  async startVM(@Param('vmid') vmid: string) {
+  async startVM(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     await this.proxmox.startVM(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.start',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
+
     return { status: 'started', vmid: Number(vmid) };
   }
 
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/stop')
-  async stopVM(@Param('vmid') vmid: string) {
+  async stopVM(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     await this.proxmox.stopVM(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.stop',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
+
     return { status: 'stopped', vmid: Number(vmid) };
   }
 
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/restart')
-  async restartVM(@Param('vmid') vmid: string) {
+  async restartVM(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     await this.proxmox.restartVM(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.restart',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
+
     return { status: 'restarted', vmid: Number(vmid) };
   }
 
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/console')
-  async openConsole(@Param('vmid') vmid: string) {
+  async openConsole(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     const consoleData = await this.proxmox.getVmConsole(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.console.open',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
 
     return {
       vmid: Number(vmid),
       ...consoleData,
       url: `https://192.168.10.20:8006/?console=kvm&novnc=1&vmid=${vmid}&node=hyperprox&resize=scale`
     };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('audit')
+  async listAudit() {
+    return this.prisma.audit_logs.findMany({
+      orderBy: { created_at: 'desc' },
+      take: 100
+    });
   }
 }

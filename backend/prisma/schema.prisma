@@ -7,6 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model users {
+  id              String   @id @default(uuid())
+  keycloak_id     String   @unique
+  email           String
+  tenant_group_id String?
+  created_at      DateTime @default(now())
+}
+
 model tenants {
   id         String   @id @default(uuid())
   code       String   @unique
@@ -30,9 +38,9 @@ model proxmox_pools {
 }
 
 model tenant_group_pools {
-  id               String @id @default(uuid())
-  tenant_group_id  String
-  proxmox_pool_id  String
+  id              String @id @default(uuid())
+  tenant_group_id String
+  proxmox_pool_id String
 }
 
 model vm_inventory {

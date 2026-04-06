@@ -6,7 +6,7 @@ import { AuthGuard } from './auth.guard';
 export class VmController {
   constructor(private prisma: PrismaService) {}
 
-  @UseGuards(AuthGuard)
+  //@UseGuards(AuthGuard)
   @Get()
   async list() {
     return this.prisma.vm_inventory.findMany();

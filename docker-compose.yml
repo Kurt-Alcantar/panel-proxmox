@@ -1,0 +1,78 @@
+version: "3.9"
+
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: panel-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: panel
+      POSTGRES_PASSWORD: panel123
+      POSTGRES_DB: paneldb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    container_name: panel-redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: panel-keycloak
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/paneldb
+      KC_DB_USERNAME: panel
+      KC_DB_PASSWORD: panel123
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
+  backend:
+    build: ./backend
+    container_name: panel-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgres://panel:panel123@postgres:5432/paneldb
+      REDIS_HOST: redis
+      KEYCLOAK_URL: http://keycloak:8080
+    depends_on:
+      - postgres
+      - redis
+      - keycloak
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build: ./frontend
+    container_name: panel-frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost/api
+    ports:
+      - "3001:3000"
+
+  nginx:
+    image: nginx:latest
+    container_name: panel-nginx
+    restart: always
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  postgres_data:

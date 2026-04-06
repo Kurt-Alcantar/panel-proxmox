@@ -1,6 +1,7 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
+import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
+import { AuthGuard } from './auth.guard';
 
 @Controller()
 export class VmController {
@@ -9,6 +10,7 @@ export class VmController {
     private readonly proxmox: ProxmoxService
   ) {}
 
+  @UseGuards(AuthGuard)
   @Get('vms')
   async list() {
     const vms = await this.prisma.vm_inventory.findMany({
@@ -22,6 +24,7 @@ export class VmController {
     }));
   }
 
+  @UseGuards(AuthGuard)
   @Get('tenant-groups/:code/vms')
   async listByTenantGroup(@Param('code') code: string) {
     const tenantGroup = await this.prisma.tenant_groups.findFirst({
@@ -68,10 +71,17 @@ export class VmController {
     }));
   }
 
+  @UseGuards(AuthGuard)
   @Get('my/vms')
-  async myVMs() {
+  async myVMs(@Req() req: any) {
+    const keycloakId = req.user?.sub;
+
+    if (!keycloakId) {
+      return [];
+    }
+
     const user = await this.prisma.users.findFirst({
-      where: { email: 'test@hyperox.com' }
+      where: { keycloak_id: keycloakId }
     });
 
     if (!user?.tenant_group_id) {
@@ -114,6 +124,7 @@ export class VmController {
     }));
   }
 
+  @UseGuards(AuthGuard)
   @Post('vms/sync')
   async syncVMs() {
     const vms = await this.proxmox.getAllVMs();
@@ -146,6 +157,7 @@ export class VmController {
     return { synced: vms.length };
   }
 
+  @UseGuards(AuthGuard)
   @Get('pools')
   async listPools() {
     return this.prisma.proxmox_pools.findMany({
@@ -153,6 +165,7 @@ export class VmController {
     });
   }
 
+  @UseGuards(AuthGuard)
   @Post('pools/sync')
   async syncPools() {
     const pools = await this.proxmox.getPools();

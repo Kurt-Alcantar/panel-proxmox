@@ -59,6 +59,27 @@ export class ProxmoxService {
     });
     return res.data.data;
   }
+  async getVmConsole(vmid: number) {
+    const res = await axios.post(
+      `${this.baseUrl}/nodes/hyperprox/qemu/${vmid}/vncproxy`,
+      null,
+      {
+        headers: this.headers,
+        httpsAgent: this.agent
+      }
+    );
+
+    return res.data.data;
+  }
+
+  async getVmConsoleWebSocket(vmid: number, vncticket: string, port: number) {
+    return {
+      host: '192.168.10.20',
+      port,
+      vncticket,
+      path: `/api2/json/nodes/hyperprox/qemu/${vmid}/vncwebsocket?port=${port}&vncticket=${encodeURIComponent(vncticket)}`
+    };
+  }
 
   async getVMs(node: string) {
     const res = await axios.get(`${this.baseUrl}/nodes/${node}/qemu`, {

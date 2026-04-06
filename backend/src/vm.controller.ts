@@ -206,4 +206,15 @@ export class VmController {
     await this.proxmox.restartVM(Number(vmid));
     return { status: 'restarted', vmid: Number(vmid) };
   }
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/console')
+  async openConsole(@Param('vmid') vmid: string) {
+    const consoleData = await this.proxmox.getVmConsole(Number(vmid));
+
+    return {
+      vmid: Number(vmid),
+      ...consoleData,
+      url: `https://192.168.10.20:8006/?console=kvm&novnc=1&vmid=${vmid}&vmname=&node=hyperprox&resize=scale`
+    };
+  }
 }

@@ -7,11 +7,11 @@ import {
 import * as jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 
-const KEYCLOAK_BASE_URL = 'http://192.168.10.163:8080';
+const KEYCLOAK_INTERNAL_URL = 'http://keycloak:8080';
 const REALM = 'master';
 
 const client = jwksClient({
-  jwksUri: `${KEYCLOAK_BASE_URL}/realms/${REALM}/protocol/openid-connect/certs`
+  jwksUri: `${KEYCLOAK_INTERNAL_URL}/realms/${REALM}/protocol/openid-connect/certs`
 });
 
 function getKey(header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) {
@@ -31,8 +31,6 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers.authorization;
 
-    console.log('AUTH HEADER:', authHeader);
-
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new UnauthorizedException('Missing bearer token');
     }
@@ -45,7 +43,7 @@ export class AuthGuard implements CanActivate {
         getKey,
         {
           algorithms: ['RS256'],
-          issuer: `${KEYCLOAK_BASE_URL}/realms/${REALM}`
+          issuer: `${KEYCLOAK_INTERNAL_URL}/realms/${REALM}`
         },
         (err, decoded) => {
           if (err || !decoded) {
@@ -53,7 +51,6 @@ export class AuthGuard implements CanActivate {
             return reject(new UnauthorizedException('Invalid token'));
           }
 
-          console.log('JWT OK sub:', (decoded as any).sub);
           request.user = decoded;
           resolve(true);
         }

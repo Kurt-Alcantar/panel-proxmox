@@ -178,28 +178,6 @@ export default function VmsPage() {
           </div>
         </div>
 
-        <div className="portal-divider" />
-
-        <div className="sidebar-section-title">Resumen</div>
-
-        <div className="summary-grid">
-          <div className="summary-card">
-            <div className="summary-label">TOTAL</div>
-            <div className="summary-value">{stats.total}</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-label">ON</div>
-            <div className="summary-value green">{stats.running}</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-label">OFF</div>
-            <div className="summary-value red">{stats.stopped}</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-label">PAUSE</div>
-            <div className="summary-value yellow">{stats.paused}</div>
-          </div>
-        </div>
 
         <div className="portal-divider" />
 

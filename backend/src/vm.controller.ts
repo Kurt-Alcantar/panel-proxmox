@@ -185,4 +185,25 @@ export class VmController {
 
     return { synced: pools.length };
   }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/start')
+  async startVM(@Param('vmid') vmid: string) {
+    await this.proxmox.startVM(Number(vmid));
+    return { status: 'started', vmid: Number(vmid) };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/stop')
+  async stopVM(@Param('vmid') vmid: string) {
+    await this.proxmox.stopVM(Number(vmid));
+    return { status: 'stopped', vmid: Number(vmid) };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/restart')
+  async restartVM(@Param('vmid') vmid: string) {
+    await this.proxmox.restartVM(Number(vmid));
+    return { status: 'restarted', vmid: Number(vmid) };
+  }
 }

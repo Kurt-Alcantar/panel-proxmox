@@ -10,7 +10,44 @@ export class ProxmoxService {
     Authorization:
       'PVEAPIToken=root@pam!krts=7bd7045b-0ca8-4a8a-a477-3b892e5911ee'
   };
+    async startVM(vmid: number) {
+    const res = await axios.post(
+      `${this.baseUrl}/nodes/hyperprox/qemu/${vmid}/status/start`,
+      null,
+      {
+        headers: this.headers,
+        httpsAgent: this.agent
+      }
+    );
 
+    return res.data;
+  }
+
+  async stopVM(vmid: number) {
+    const res = await axios.post(
+      `${this.baseUrl}/nodes/hyperprox/qemu/${vmid}/status/stop`,
+      null,
+      {
+        headers: this.headers,
+        httpsAgent: this.agent
+      }
+    );
+
+    return res.data;
+  }
+
+  async restartVM(vmid: number) {
+    const res = await axios.post(
+      `${this.baseUrl}/nodes/hyperprox/qemu/${vmid}/status/reboot`,
+      null,
+      {
+        headers: this.headers,
+        httpsAgent: this.agent
+      }
+    );
+
+    return res.data;
+  }
   private agent = new https.Agent({
     rejectUnauthorized: false
   });

@@ -7,31 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model tenants {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  name      String
-  status    String
-  created_at DateTime @default(now())
-}
-
-model tenant_groups {
-  id        String   @id @default(uuid())
-  tenant_id String
-  code      String
-  name      String
-  created_at DateTime @default(now())
-}
-
-model proxmox_pools {
-  id          String @id @default(uuid())
-  external_id String @unique
-  name        String
-}
-
 model vm_inventory {
-  id              String @id @default(uuid())
-  vmid            Int
+  id              String   @id @default(uuid())
+  vmid            Int      @unique
   name            String?
   node            String?
   pool_id         String?
@@ -39,7 +17,7 @@ model vm_inventory {
   tenant_group_id String?
   status          String?
   cpu             Int?
-  memory          Int?
-  disk            Int?
+  memory          BigInt?
+  disk            BigInt?
   created_at      DateTime @default(now())
 }

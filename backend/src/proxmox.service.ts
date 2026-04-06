@@ -25,14 +25,34 @@ export class ProxmoxService {
   }
 
   async getVMs(node: string) {
-    const res = await axios.get(
-      `${this.baseUrl}/nodes/${node}/qemu`,
-      {
-        headers: this.headers,
-        httpsAgent: this.agent
-      }
-    );
+    const res = await axios.get(`${this.baseUrl}/nodes/${node}/qemu`, {
+      headers: this.headers,
+      httpsAgent: this.agent
+    });
 
     return res.data.data;
+  }
+
+  async getAllVMs() {
+    const nodes = await this.getNodes();
+    const allVMs: any[] = [];
+
+    for (const node of nodes) {
+      const vms = await this.getVMs(node.node);
+
+      for (const vm of vms) {
+        allVMs.push({
+          vmid: vm.vmid,
+          name: vm.name ?? null,
+          node: node.node,
+          status: vm.status ?? null,
+          cpu: vm.cpus ?? null,
+          memory: vm.maxmem ?? null,
+          disk: vm.maxdisk ?? null
+        });
+      }
+    }
+
+    return allVMs;
   }
 }

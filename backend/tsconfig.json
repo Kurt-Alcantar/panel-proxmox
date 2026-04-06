@@ -4,6 +4,11 @@
     "target": "es2017",
     "outDir": "./dist",
     "rootDir": "./src",
-    "strict": false
+    "strict": false,
+    "esModuleInterop": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    "types": ["node"]
   }
 }

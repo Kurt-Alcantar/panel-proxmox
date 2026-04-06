@@ -31,6 +31,8 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers.authorization;
 
+    console.log('AUTH HEADER:', authHeader);
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new UnauthorizedException('Missing bearer token');
     }
@@ -51,6 +53,7 @@ export class AuthGuard implements CanActivate {
             return reject(new UnauthorizedException('Invalid token'));
           }
 
+          console.log('JWT OK sub:', (decoded as any).sub);
           request.user = decoded;
           resolve(true);
         }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 
 export default function LoginPage() {
@@ -7,6 +7,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('refresh_token')
+  }, [])
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -19,10 +24,7 @@ export default function LoginPage() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          username,
-          password
-        })
+        body: JSON.stringify({ username, password })
       })
 
       const data = await res.json()
@@ -33,7 +35,8 @@ export default function LoginPage() {
 
       localStorage.setItem('token', data.access_token)
       localStorage.setItem('refresh_token', data.refresh_token || '')
-      router.push('/vms')
+
+      router.replace('/vms')
     } catch (err) {
       setError(err.message || 'Error al iniciar sesión')
     } finally {
@@ -68,11 +71,7 @@ export default function LoginPage() {
           />
         </div>
 
-        {error && (
-          <div style={{ color: 'red', marginBottom: 12 }}>
-            {error}
-          </div>
-        )}
+        {error && <div style={{ color: 'red', marginBottom: 12 }}>{error}</div>}
 
         <button type="submit" disabled={loading} style={{ padding: '10px 16px' }}>
           {loading ? 'Entrando...' : 'Iniciar sesión'}

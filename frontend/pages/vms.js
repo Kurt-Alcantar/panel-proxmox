@@ -11,13 +11,13 @@ export default function VmsPage() {
     const token = localStorage.getItem('token')
 
     if (!token) {
-      router.push('/login')
+      router.replace('/login')
       return
     }
 
     const fetchVMs = async () => {
       try {
-        const res = await fetch('http://192.168.10.163/api/my/vms', {
+        const res = await fetch('/api/my/vms', {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -26,7 +26,7 @@ export default function VmsPage() {
         if (res.status === 401) {
           localStorage.removeItem('token')
           localStorage.removeItem('refresh_token')
-          router.push('/login')
+          router.replace('/login')
           return
         }
 
@@ -49,7 +49,7 @@ export default function VmsPage() {
   const logout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('refresh_token')
-    router.push('/login')
+    router.replace('/login')
   }
 
   return (
@@ -62,9 +62,7 @@ export default function VmsPage() {
       {loading && <p>Cargando...</p>}
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      {!loading && !error && vms.length === 0 && (
-        <p>No hay VMs asignadas.</p>
-      )}
+      {!loading && !error && vms.length === 0 && <p>No hay VMs asignadas.</p>}
 
       {!loading && !error && vms.length > 0 && (
         <table border="1" cellPadding="10" cellSpacing="0" style={{ borderCollapse: 'collapse', width: '100%' }}>

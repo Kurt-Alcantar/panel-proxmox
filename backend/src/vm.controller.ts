@@ -31,36 +31,23 @@ export class VmController {
       where: { code }
     });
 
-    if (!tenantGroup) {
-      return [];
-    }
+    if (!tenantGroup) return [];
 
     const bindings = await this.prisma.tenant_group_pools.findMany({
       where: { tenant_group_id: tenantGroup.id }
     });
 
     const proxmoxPoolIds = bindings.map((b) => b.proxmox_pool_id);
-
-    if (!proxmoxPoolIds.length) {
-      return [];
-    }
+    if (!proxmoxPoolIds.length) return [];
 
     const pools = await this.prisma.proxmox_pools.findMany({
-      where: {
-        id: {
-          in: proxmoxPoolIds
-        }
-      }
+      where: { id: { in: proxmoxPoolIds } }
     });
 
     const poolNames = pools.map((p) => p.external_id);
 
     const vms = await this.prisma.vm_inventory.findMany({
-      where: {
-        pool_id: {
-          in: poolNames
-        }
-      },
+      where: { pool_id: { in: poolNames } },
       orderBy: { vmid: 'asc' }
     });
 
@@ -75,45 +62,29 @@ export class VmController {
   @Get('my/vms')
   async myVMs(@Req() req: any) {
     const keycloakId = req.user?.sub;
-
-    if (!keycloakId) {
-      return [];
-    }
+    if (!keycloakId) return [];
 
     const user = await this.prisma.users.findFirst({
       where: { keycloak_id: keycloakId }
     });
 
-    if (!user?.tenant_group_id) {
-      return [];
-    }
+    if (!user?.tenant_group_id) return [];
 
     const bindings = await this.prisma.tenant_group_pools.findMany({
       where: { tenant_group_id: user.tenant_group_id }
     });
 
     const poolIds = bindings.map((b) => b.proxmox_pool_id);
-
-    if (!poolIds.length) {
-      return [];
-    }
+    if (!poolIds.length) return [];
 
     const pools = await this.prisma.proxmox_pools.findMany({
-      where: {
-        id: {
-          in: poolIds
-        }
-      }
+      where: { id: { in: poolIds } }
     });
 
     const poolNames = pools.map((p) => p.external_id);
 
     const vms = await this.prisma.vm_inventory.findMany({
-      where: {
-        pool_id: {
-          in: poolNames
-        }
-      },
+      where: { pool_id: { in: poolNames } },
       orderBy: { vmid: 'asc' }
     });
 
@@ -173,9 +144,7 @@ export class VmController {
     for (const pool of pools) {
       await this.prisma.proxmox_pools.upsert({
         where: { external_id: pool.poolid },
-        update: {
-          name: pool.poolid
-        },
+        update: { name: pool.poolid },
         create: {
           external_id: pool.poolid,
           name: pool.poolid
@@ -206,6 +175,7 @@ export class VmController {
     await this.proxmox.restartVM(Number(vmid));
     return { status: 'restarted', vmid: Number(vmid) };
   }
+
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/console')
   async openConsole(@Param('vmid') vmid: string) {
@@ -214,7 +184,7 @@ export class VmController {
     return {
       vmid: Number(vmid),
       ...consoleData,
-      url: `https://192.168.10.20:8006/?console=kvm&novnc=1&vmid=${vmid}&vmname=&node=hyperprox&resize=scale`
+      url: `https://192.168.10.20:8006/?console=kvm&novnc=1&vmid=${vmid}&node=hyperprox&resize=scale`
     };
   }
 }

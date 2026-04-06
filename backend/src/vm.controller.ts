@@ -11,9 +11,15 @@ export class VmController {
 
   @Get()
   async list() {
-    return this.prisma.vm_inventory.findMany({
+    const vms = await this.prisma.vm_inventory.findMany({
       orderBy: { vmid: 'asc' }
     });
+
+    return vms.map((vm) => ({
+      ...vm,
+      memory: vm.memory !== null ? vm.memory.toString() : null,
+      disk: vm.disk !== null ? vm.disk.toString() : null
+    }));
   }
 
   @Post('sync')

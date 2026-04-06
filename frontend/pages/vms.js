@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
+import AppShell from '../components/AppShell'
 
 export default function VmsPage() {
   const router = useRouter()
@@ -144,12 +145,6 @@ export default function VmsPage() {
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('refresh_token')
-    router.replace('/login')
-  }
-
   const badgeClass = (status) => {
     if (status === 'running') return 'badge running'
     if (status === 'stopped') return 'badge stopped'
@@ -157,131 +152,127 @@ export default function VmsPage() {
   }
 
   return (
-    <div className="page">
-      <div className="container">
-        <div className="topbar">
-          <div className="titleBlock">
-            <h1>Mis VMs</h1>
-            <p>Vista filtrada por tenant group con control operativo.</p>
-          </div>
-          <button className="btn btnSecondary" onClick={logout}>
-            Cerrar sesión
-          </button>
+    <AppShell
+      title="Mis VMs"
+      subtitle="Vista filtrada por tenant group con control operativo."
+    >
+      <div className="gridStats">
+        <div className="card statCard">
+          <div className="statLabel">Total de VMs</div>
+          <div className="statValue">{stats.total}</div>
         </div>
-
-        <div className="gridStats">
-          <div className="card statCard">
-            <div className="statLabel">Total de VMs</div>
-            <div className="statValue">{stats.total}</div>
-          </div>
-          <div className="card statCard">
-            <div className="statLabel">Encendidas</div>
-            <div className="statValue">{stats.running}</div>
-          </div>
-          <div className="card statCard">
-            <div className="statLabel">Apagadas</div>
-            <div className="statValue">{stats.stopped}</div>
-          </div>
-          <div className="card statCard">
-            <div className="statLabel">Pools visibles</div>
-            <div className="statValue">{stats.pools}</div>
-          </div>
+        <div className="card statCard">
+          <div className="statLabel">Encendidas</div>
+          <div className="statValue">{stats.running}</div>
         </div>
-
-        <div className="card cardPad">
-          <div className="toolbar">
-            <input
-              className="searchBox"
-              placeholder="Buscar por nombre, vmid, pool, nodo o status..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <div className="muted">{filteredVMs.length} resultado(s)</div>
-          </div>
-
-          {loading && <p className="muted">Cargando...</p>}
-          {error && <div className="errorBox">{error}</div>}
-          {!loading && !error && filteredVMs.length === 0 && (
-            <div className="emptyState">No hay VMs asignadas.</div>
-          )}
-
-          {!loading && filteredVMs.length > 0 && (
-            <div className="tableWrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>VMID</th>
-                    <th>VM</th>
-                    <th>Pool</th>
-                    <th>Estado</th>
-                    <th>CPU</th>
-                    <th>Memory</th>
-                    <th>Disk</th>
-                    <th>Acciones</th>
-                    <th>Consola</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredVMs.map((vm) => (
-                    <tr key={vm.id}>
-                      <td>{vm.vmid}</td>
-                      <td>
-                        <div className="vmName">{vm.name}</div>
-                        <div className="vmSub">{vm.node}</div>
-                      </td>
-                      <td>{vm.pool_id || '-'}</td>
-                      <td>
-                        <span className={badgeClass(vm.status)}>
-                          {vm.status || 'unknown'}
-                        </span>
-                      </td>
-                      <td>{vm.cpu ?? '-'}</td>
-                      <td>{vm.memory ?? '-'}</td>
-                      <td>{vm.disk ?? '-'}</td>
-                      <td>
-                        <div className="actions">
-                          <button
-                            className="btn btnPrimary"
-                            onClick={() => action(vm.vmid, 'start')}
-                            disabled={actionLoading === `${vm.vmid}-start`}
-                          >
-                            {actionLoading === `${vm.vmid}-start` ? '...' : 'Start'}
-                          </button>
-
-                          <button
-                            className="btn btnSecondary"
-                            onClick={() => action(vm.vmid, 'restart')}
-                            disabled={actionLoading === `${vm.vmid}-restart`}
-                          >
-                            {actionLoading === `${vm.vmid}-restart` ? '...' : 'Restart'}
-                          </button>
-
-                          <button
-                            className="btn btnDanger"
-                            onClick={() => action(vm.vmid, 'stop')}
-                            disabled={actionLoading === `${vm.vmid}-stop`}
-                          >
-                            {actionLoading === `${vm.vmid}-stop` ? '...' : 'Stop'}
-                          </button>
-                        </div>
-                      </td>
-                      <td>
-                        <button
-                          className="btn btnSecondary"
-                          onClick={() => openConsole(vm.vmid)}
-                          disabled={actionLoading === `${vm.vmid}-console`}
-                        >
-                          {actionLoading === `${vm.vmid}-console` ? '...' : 'Abrir'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <div className="card statCard">
+          <div className="statLabel">Apagadas</div>
+          <div className="statValue">{stats.stopped}</div>
+        </div>
+        <div className="card statCard">
+          <div className="statLabel">Pools visibles</div>
+          <div className="statValue">{stats.pools}</div>
         </div>
       </div>
-    </div>
+
+      <div className="card cardPad">
+        <div className="toolbar">
+          <input
+            className="searchBox"
+            placeholder="Buscar por nombre, vmid, pool, nodo o status..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="muted">{filteredVMs.length} resultado(s)</div>
+        </div>
+
+        {loading && <p className="muted">Cargando...</p>}
+        {error && <div className="errorBox">{error}</div>}
+        {!loading && !error && filteredVMs.length === 0 && (
+          <div className="emptyState">No hay VMs asignadas.</div>
+        )}
+
+        {!loading && filteredVMs.length > 0 && (
+          <div className="tableWrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>VMID</th>
+                  <th>VM</th>
+                  <th>Pool</th>
+                  <th>Estado</th>
+                  <th>CPU</th>
+                  <th>Memory</th>
+                  <th>Disk</th>
+                  <th>Acciones</th>
+                  <th>Consola</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredVMs.map((vm) => (
+                  <tr key={vm.id}>
+                    <td>{vm.vmid}</td>
+                    <td>
+                      <button
+                        className="linkBtn"
+                        onClick={() => router.push(`/vms/${vm.vmid}`)}
+                      >
+                        <div className="vmName">{vm.name}</div>
+                        <div className="vmSub">{vm.node}</div>
+                      </button>
+                    </td>
+                    <td>{vm.pool_id || '-'}</td>
+                    <td>
+                      <span className={badgeClass(vm.status)}>
+                        {vm.status || 'unknown'}
+                      </span>
+                    </td>
+                    <td>{vm.cpu ?? '-'}</td>
+                    <td>{vm.memory ?? '-'}</td>
+                    <td>{vm.disk ?? '-'}</td>
+                    <td>
+                      <div className="actions">
+                        <button
+                          className="btn btnPrimary"
+                          onClick={() => action(vm.vmid, 'start')}
+                          disabled={actionLoading === `${vm.vmid}-start`}
+                        >
+                          {actionLoading === `${vm.vmid}-start` ? '...' : 'Start'}
+                        </button>
+
+                        <button
+                          className="btn btnSecondary"
+                          onClick={() => action(vm.vmid, 'restart')}
+                          disabled={actionLoading === `${vm.vmid}-restart`}
+                        >
+                          {actionLoading === `${vm.vmid}-restart` ? '...' : 'Restart'}
+                        </button>
+
+                        <button
+                          className="btn btnDanger"
+                          onClick={() => action(vm.vmid, 'stop')}
+                          disabled={actionLoading === `${vm.vmid}-stop`}
+                        >
+                          {actionLoading === `${vm.vmid}-stop` ? '...' : 'Stop'}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btnSecondary"
+                        onClick={() => openConsole(vm.vmid)}
+                        disabled={actionLoading === `${vm.vmid}-console`}
+                      >
+                        {actionLoading === `${vm.vmid}-console` ? '...' : 'Abrir'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </AppShell>
   )
 }

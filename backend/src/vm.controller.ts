@@ -11,7 +11,51 @@ export class VmController {
     private readonly proxmox: ProxmoxService,
     private readonly audit: AuditService
   ) {}
+    @UseGuards(AuthGuard)
+  @Get('vms/:vmid')
+  async getVmDetail(@Param('vmid') vmid: string, @Req() req: any) {
+    const keycloakId = req.user?.sub;
+    if (!keycloakId) {
+      return null;
+    }
 
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: keycloakId }
+    });
+
+    if (!user?.tenant_group_id) {
+      return null;
+    }
+
+    const bindings = await this.prisma.tenant_group_pools.findMany({
+      where: { tenant_group_id: user.tenant_group_id }
+    });
+
+    const poolIds = bindings.map((b) => b.proxmox_pool_id);
+
+    const pools = await this.prisma.proxmox_pools.findMany({
+      where: { id: { in: poolIds } }
+    });
+
+    const poolNames = pools.map((p) => p.external_id);
+
+    const vm = await this.prisma.vm_inventory.findFirst({
+      where: {
+        vmid: Number(vmid),
+        pool_id: { in: poolNames }
+      }
+    });
+
+    if (!vm) {
+      return null;
+    }
+
+    return {
+      ...vm,
+      memory: vm.memory !== null ? vm.memory.toString() : null,
+      disk: vm.disk !== null ? vm.disk.toString() : null
+    };
+  }
   @UseGuards(AuthGuard)
   @Get('vms')
   async list() {

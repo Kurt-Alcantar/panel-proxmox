@@ -23,26 +23,33 @@ export class VmController {
     }
   }
 
-  private async getUserContext(keycloakId?: string) {
-    if (!keycloakId) return null;
+  private async getUserContext(keycloakId: string) {
+    const rows = await this.prisma.$queryRaw<Array<{
+      id: string
+      email: string
+      tenant_group_id: string | null
+      roles: string[]
+    }>>`
+      SELECT
+        u.id,
+        u.email,
+        u.tenant_group_id,
+        COALESCE(
+          array_agg(DISTINCT r.code) FILTER (WHERE r.code IS NOT NULL),
+          ARRAY[]::text[]
+        ) AS roles
+      FROM users u
+      LEFT JOIN user_roles ur ON ur.user_id = u.id
+      LEFT JOIN roles r ON r.id = ur.role_id
+      WHERE u.keycloak_id = ${keycloakId}
+      GROUP BY u.id, u.email, u.tenant_group_id
+    `
 
-    const user = await this.prisma.users.findFirst({
-      where: { keycloak_id: keycloakId }
-    });
+    if (!rows.length) {
+      return null
+    }
 
-    if (!user) return null;
-
-    const roles = await this.prisma.$queryRaw<any[]>`
-      SELECT r.code
-      FROM user_roles ur
-      JOIN roles r ON r.id = ur.role_id
-      WHERE ur.user_id = ${user.id}
-    `;
-
-    const roleCodes = roles.map((row) => row.code);
-    const isPlatformAdmin = roleCodes.includes('platform_admin');
-
-    return { user, roleCodes, isPlatformAdmin };
+    return rows[0]
   }
 
   private async getAllowedPoolExternalIds(userContext: any) {
@@ -211,25 +218,66 @@ export class VmController {
   @UseGuards(AuthGuard)
   @Get('my/vms')
   async myVMs(@Req() req: any) {
-    const userContext = await this.getUserContext(req.user?.sub);
-    if (!userContext?.user) return [];
+    const keycloakId = req.user?.sub
 
-    if (userContext.isPlatformAdmin) {
-      const vms = await this.prisma.vm_inventory.findMany({ orderBy: { vmid: 'asc' } });
-      return vms.map((vm) => this.serializeVm(vm));
+    if (!keycloakId) {
+      throw new UnauthorizedException('Token inválido')
     }
 
-    const poolNames = await this.getAllowedPoolExternalIds(userContext);
-    if (!poolNames?.length) return [];
+    const user = await this.getUserContext(keycloakId)
 
-    const vms = await this.prisma.vm_inventory.findMany({
-      where: { pool_id: { in: poolNames } },
-      orderBy: { vmid: 'asc' }
-    });
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado')
+    }
 
-    return vms.map((vm) => this.serializeVm(vm));
+    const roles = user.roles || []
+    const isPlatformAdmin = roles.includes('platform_admin')
+
+    // platform_admin ve todas las VMs
+    if (isPlatformAdmin) {
+      return this.prisma.vm_inventory.findMany({
+        orderBy: [
+          { pool_id: 'asc' },
+          { name: 'asc' }
+        ]
+      })
+    }
+
+    // usuario normal sin tenant => no ve nada
+    if (!user.tenant_group_id) {
+      return []
+    }
+
+    // Obtener external_id de pools permitidos para el tenant_group
+    const poolRows = await this.prisma.$queryRaw<Array<{ external_id: string }>>`
+      SELECT pp.external_id
+      FROM tenant_group_pools tgp
+      JOIN proxmox_pools pp
+        ON pp.id = tgp.proxmox_pool_id
+      WHERE tgp.tenant_group_id = ${user.tenant_group_id}::uuid
+    `
+
+    const allowedPoolIds = poolRows
+      .map((r) => r.external_id)
+      .filter(Boolean)
+
+    if (!allowedPoolIds.length) {
+      return []
+    }
+
+    return this.prisma.vm_inventory.findMany({
+      where: {
+        pool_id: {
+          in: allowedPoolIds
+        }
+      },
+      orderBy: [
+        { pool_id: 'asc' },
+        { name: 'asc' }
+      ]
+    })
   }
-
+//fin
   @UseGuards(AuthGuard)
   @Post('vms/sync')
   async syncVMs() {

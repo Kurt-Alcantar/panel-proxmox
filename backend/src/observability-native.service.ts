@@ -6,17 +6,36 @@ export class ObservabilityNativeService {
   constructor(private readonly elastic: ElasticsearchService) {}
 
   private hostFilter(hostName: string) {
+    const raw = String(hostName || '').trim()
+    const lower = raw.toLowerCase()
+
     return {
       bool: {
         should: [
-          { term: { 'host.name.keyword': hostName } },
-          { term: { 'host.name': hostName } }
+          { term: { 'host.hostname': raw } },
+          { term: { 'host.name': raw } },
+          { term: { 'host.name': lower } },
+          {
+            wildcard: {
+              'host.hostname': {
+                value: `*${raw}*`,
+                case_insensitive: true
+              }
+            }
+          },
+          {
+            wildcard: {
+              'host.name': {
+                value: `*${raw}*`,
+                case_insensitive: true
+              }
+            }
+          }
         ],
         minimum_should_match: 1
       }
     }
   }
-
   private range24h() {
     return { range: { '@timestamp': { gte: 'now-24h', lte: 'now' } } }
   }
@@ -66,7 +85,7 @@ export class ObservabilityNativeService {
         bool: {
           filter: [this.hostFilter(hostName), this.range24h()],
           should: [
-            { terms: { 'log.level.keyword': ['error', 'critical', 'fatal'] } },
+            { terms: { 'log.level': ['error', 'critical', 'fatal'] } },
             { terms: { 'log.level': ['error', 'critical', 'fatal'] } }
           ],
           minimum_should_match: 1
@@ -105,7 +124,7 @@ export class ObservabilityNativeService {
         const src = this.hitSource(hit)
         return {
           timestamp: src['@timestamp'],
-          hostName: this.pick(src, 'host.name'),
+          hostName: this.pick(src, 'host.hostname') || this.pick(src, 'host.name'),
           serviceName: this.pick(src, 'service.name'),
           processName: this.pick(src, 'process.name'),
           level: this.pick(src, 'log.level'),
@@ -121,7 +140,7 @@ export class ObservabilityNativeService {
       size: 0,
       query: {
         bool: {
-          filter: [this.hostFilter(hostName), this.range24h(), { term: { 'winlog.channel.keyword': 'Security' } }]
+          filter: [this.hostFilter(hostName), this.range24h(), { term: { 'winlog.channel': 'Security' } }]
         }
       },
       aggs: {
@@ -132,7 +151,7 @@ export class ObservabilityNativeService {
                 bool: {
                   filter: [
                     { term: { 'event.code': '4624' } },
-                    { terms: { 'winlog.event_data.LogonType.keyword': ['2', '10'] } }
+                    { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }
                   ]
                 }
               },
@@ -145,14 +164,14 @@ export class ObservabilityNativeService {
                 bool: {
                   filter: [
                     { term: { 'event.code': '4624' } },
-                    { term: { 'winlog.event_data.LogonType.keyword': '10' } }
+                    { term: { 'winlog.event_data.LogonType': '10' } }
                   ]
                 }
               }
             }
           }
         },
-        failed_by_user: { terms: { field: 'winlog.event_data.TargetUserName.keyword', size: 10 } },
+        failed_by_user: { terms: { field: 'winlog.event_data.TargetUserName', size: 10 } },
         failed_by_ip: { terms: { field: 'source.ip', size: 10 } }
       }
     }
@@ -168,9 +187,9 @@ export class ObservabilityNativeService {
           filter: [
             this.hostFilter(hostName),
             this.range24h(),
-            { term: { 'winlog.channel.keyword': 'Security' } },
+            { term: { 'winlog.channel': 'Security' } },
             { term: { 'event.code': '4624' } },
-            { terms: { 'winlog.event_data.LogonType.keyword': ['2', '10'] } }
+            { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }
           ]
         }
       },
@@ -193,7 +212,7 @@ export class ObservabilityNativeService {
           filter: [
             this.hostFilter(hostName),
             this.range24h(),
-            { term: { 'winlog.channel.keyword': 'Security' } },
+            { term: { 'winlog.channel': 'Security' } },
             { term: { 'event.code': '4625' } }
           ]
         }
@@ -218,7 +237,7 @@ export class ObservabilityNativeService {
           filter: [
             this.hostFilter(hostName),
             this.range24h(),
-            { term: { 'winlog.channel.keyword': 'Security' } },
+            { term: { 'winlog.channel': 'Security' } },
             { terms: { 'event.code': ['4672', '4673', '4674'] } }
           ]
         }
@@ -234,7 +253,7 @@ export class ObservabilityNativeService {
           filter: [
             this.hostFilter(hostName),
             this.range24h(),
-            { term: { 'winlog.channel.keyword': 'Security' } },
+            { term: { 'winlog.channel': 'Security' } },
             { terms: { 'event.code': ['4720', '4722', '4723', '4724', '4725', '4726', '4728', '4729', '4732', '4733', '4756', '4757', '4740'] } }
           ]
         }
@@ -253,9 +272,9 @@ export class ObservabilityNativeService {
                 filter: [
                   this.hostFilter(hostName),
                   this.range24h(),
-                  { term: { 'winlog.channel.keyword': 'Security' } },
+                  { term: { 'winlog.channel': 'Security' } },
                   { term: { 'event.code': '4624' } },
-                  { term: { 'winlog.event_data.LogonType.keyword': '10' } }
+                  { term: { 'winlog.event_data.LogonType': '10' } }
                 ]
               }
             },
@@ -265,8 +284,8 @@ export class ObservabilityNativeService {
                 should: [
                   { wildcard: { message: '*WinRM*' } },
                   { wildcard: { message: '*PSRemoting*' } },
-                  { term: { 'process.name.keyword': 'wsmprovhost.exe' } },
-                  { terms: { 'process.name.keyword': ['powershell.exe', 'pwsh.exe'] } }
+                  { term: { 'process.name': 'wsmprovhost.exe' } },
+                  { terms: { 'process.name': ['powershell.exe', 'pwsh.exe'] } }
                 ],
                 minimum_should_match: 1
               }

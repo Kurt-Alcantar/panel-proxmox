@@ -971,3 +971,179 @@ input {
     grid-template-columns: 1fr;
   }
 }
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.metricCard {
+  padding: 18px;
+}
+
+.metricTitle {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.metricValue {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.infoItem {
+  background: rgba(23, 17, 41, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.infoLabel {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.infoValue {
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.detailMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.tabBtn {
+  border: 1px solid var(--border);
+  background: rgba(23, 17, 41, 0.92);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tabBtn.active {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.embedSection {
+  display: grid;
+  gap: 14px;
+}
+
+.embedToolbar,
+.summaryHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+
+.embedTitle,
+.sectionTitle,
+.summaryHead h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.embedSub,
+.summaryHead p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.embedWrap {
+  background: rgba(23, 17, 41, 0.92);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 560px;
+}
+
+.embedWrap.large {
+  min-height: 780px;
+}
+
+.embedWrap iframe {
+  width: 100%;
+  height: 780px;
+  border: none;
+  background: #0b0717;
+}
+
+.observabilitySummary {
+  margin-top: 10px;
+}
+
+.serviceChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.serviceChip {
+  display: inline-flex;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: #ddd6fe;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auditVmLayout {
+  display: grid;
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .metricGrid,
+  .infoGrid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .detailHeader,
+  .embedToolbar,
+  .summaryHead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .metricGrid,
+  .infoGrid {
+    grid-template-columns: 1fr;
+  }
+}

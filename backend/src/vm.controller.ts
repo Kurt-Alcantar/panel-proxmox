@@ -3,6 +3,7 @@ import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
 import { AuthGuard } from './auth.guard';
 import { AuditService } from './audit.service';
+import { getVmObservability } from './observability';
 
 @Controller()
 export class VmController {
@@ -11,7 +12,16 @@ export class VmController {
     private readonly proxmox: ProxmoxService,
     private readonly audit: AuditService
   ) {}
-    @UseGuards(AuthGuard)
+
+  private serializeVm(vm: any) {
+    return {
+      ...vm,
+      memory: vm.memory !== null ? vm.memory.toString() : null,
+      disk: vm.disk !== null ? vm.disk.toString() : null
+    }
+  }
+
+  @UseGuards(AuthGuard)
   @Get('vms/:vmid')
   async getVmDetail(@Param('vmid') vmid: string, @Req() req: any) {
     const keycloakId = req.user?.sub;
@@ -51,11 +61,11 @@ export class VmController {
     }
 
     return {
-      ...vm,
-      memory: vm.memory !== null ? vm.memory.toString() : null,
-      disk: vm.disk !== null ? vm.disk.toString() : null
+      ...this.serializeVm(vm),
+      observability: getVmObservability(vm)
     };
   }
+
   @UseGuards(AuthGuard)
   @Get('vms')
   async list() {
@@ -63,11 +73,7 @@ export class VmController {
       orderBy: { vmid: 'asc' }
     });
 
-    return vms.map((vm) => ({
-      ...vm,
-      memory: vm.memory !== null ? vm.memory.toString() : null,
-      disk: vm.disk !== null ? vm.disk.toString() : null
-    }));
+    return vms.map((vm) => this.serializeVm(vm));
   }
 
   @UseGuards(AuthGuard)
@@ -110,11 +116,7 @@ export class VmController {
       orderBy: { vmid: 'asc' }
     });
 
-    return vms.map((vm) => ({
-      ...vm,
-      memory: vm.memory !== null ? vm.memory.toString() : null,
-      disk: vm.disk !== null ? vm.disk.toString() : null
-    }));
+    return vms.map((vm) => this.serializeVm(vm));
   }
 
   @UseGuards(AuthGuard)
@@ -163,11 +165,7 @@ export class VmController {
       orderBy: { vmid: 'asc' }
     });
 
-    return vms.map((vm) => ({
-      ...vm,
-      memory: vm.memory !== null ? vm.memory.toString() : null,
-      disk: vm.disk !== null ? vm.disk.toString() : null
-    }));
+    return vms.map((vm) => this.serializeVm(vm));
   }
 
   @UseGuards(AuthGuard)
@@ -310,6 +308,16 @@ export class VmController {
       ...consoleData,
       url: `https://192.168.10.20:8006/?console=kvm&novnc=1&vmid=${vmid}&node=hyperprox&resize=scale`
     };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/audit')
+  async getVmAudit(@Param('vmid') vmid: string) {
+    return this.prisma.audit_logs.findMany({
+      where: { target: `vm:${vmid}` },
+      orderBy: { created_at: 'desc' },
+      take: 100
+    });
   }
 
   @UseGuards(AuthGuard)

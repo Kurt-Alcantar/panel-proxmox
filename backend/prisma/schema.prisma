@@ -44,18 +44,23 @@ model tenant_group_pools {
 }
 
 model vm_inventory {
-  id              String   @id @default(uuid())
-  vmid            Int      @unique
-  name            String?
-  node            String?
-  pool_id         String?
-  tenant_id       String?
-  tenant_group_id String?
-  status          String?
-  cpu             Int?
-  memory          BigInt?
-  disk            BigInt?
-  created_at      DateTime @default(now())
+  id                    String   @id @default(uuid())
+  vmid                  Int      @unique
+  name                  String?
+  node                  String?
+  pool_id               String?
+  tenant_id             String?
+  tenant_group_id       String?
+  status                String?
+  cpu                   Int?
+  memory                BigInt?
+  disk                  BigInt?
+  os_type               String?
+  elastic_host_name     String?
+  kibana_base_url       String?
+  monitored_services    String?
+  observability_enabled Boolean  @default(true)
+  created_at            DateTime @default(now())
 }
 
 model audit_logs {

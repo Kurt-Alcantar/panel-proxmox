@@ -88,33 +88,48 @@ export default function VmDetailPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
 
-  const apiGet = async (path) => {
-    const activeToken = localStorage.getItem('token')
-    if (!activeToken) {
-      router.replace('/login')
-      return null
+const apiGet = async (path) => {
+  let activeToken = localStorage.getItem('token')
+  if (!activeToken) { router.replace('/login'); return null }
+
+  let res = await fetch(path, { headers: { Authorization: `Bearer ${activeToken}` } })
+
+  // Si 401, intentar refresh antes de rendirse
+  if (res.status === 401) {
+    const refreshToken = localStorage.getItem('refresh_token')
+    if (refreshToken) {
+      try {
+        const refreshRes = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken })
+        })
+        if (refreshRes.ok) {
+          const data = await refreshRes.json()
+          localStorage.setItem('token', data.access_token)
+          localStorage.setItem('refresh_token', data.refresh_token || '')
+          // Reintentar con el token nuevo
+          res = await fetch(path, { headers: { Authorization: `Bearer ${data.access_token}` } })
+        }
+      } catch (_) {}
     }
-
-    const res = await fetch(path, {
-      headers: {
-        Authorization: `Bearer ${activeToken}`
-      }
-    })
-
-    if (res.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('refresh_token')
-      router.replace('/login')
-      return null
-    }
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.message || 'Error consultando API')
-    }
-
-    return res.json()
   }
+
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('refresh_token')
+    router.replace('/login')
+    return null
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.message || 'Error consultando API')
+  }
+
+  return res.json()
+}
+
 
   const fetchVm = async () => {
     if (!vmid || !token) return

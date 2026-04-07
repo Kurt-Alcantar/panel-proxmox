@@ -257,7 +257,7 @@ export default function VmDetailPage() {
         </div>
 
         <div className="embedWrap large">
-          <iframe src={activeDashboard.embedUrl} title={`Kibana ${TAB_LABELS[tab]}`} />
+          <iframe src={activeDashboard.embedUrl} title={`Kibana ${tabLabels[tab]}`} />
         </div>
       </div>
     )
@@ -341,7 +341,7 @@ export default function VmDetailPage() {
           </div>
 
           <div className="tabBar">
-            {Object.entries(TAB_LABELS).map(([key, label]) => (
+            {Object.entries(tabLabels).map(([key, label]) => (
               <button
                 key={key}
                 className={`tabBtn ${tab === key ? 'active' : ''}`}

@@ -2,11 +2,17 @@ import { useRouter } from 'next/router'
 import { useEffect, useMemo, useState } from 'react'
 import AppShell from '../../components/AppShell'
 
-const TAB_LABELS = {
+const SPLIT_TAB_LABELS = {
   overview: 'Resumen',
   services: 'Servicios',
   logs: 'Logs',
   events: 'Eventos',
+  audit: 'Auditoría'
+}
+
+const UNIFIED_TAB_LABELS = {
+  overview: 'Resumen',
+  unified: 'Dashboard',
   audit: 'Auditoría'
 }
 
@@ -128,6 +134,7 @@ export default function VmDetailPage() {
   }
 
   const observability = vm?.observability || null
+  const tabLabels = observability?.mode === 'unified' ? UNIFIED_TAB_LABELS : SPLIT_TAB_LABELS
   const activeDashboard = useMemo(() => {
     if (!observability?.dashboards) return null
     return observability.dashboards[tab] || null
@@ -213,7 +220,7 @@ export default function VmDetailPage() {
       return (
         <div className="card cardPad">
           <div className="errorBox">
-            Esta VM todavía no tiene observabilidad habilitada. Debes definir al menos <strong>os_type</strong>, <strong>elastic_host_name</strong> y dejar activa la bandera <strong>observability_enabled</strong>.
+            Esta VM todavía no tiene observabilidad habilitada. Debes definir al menos <strong>os_type</strong>, <strong>elastic_host_name</strong> y dejar activa la bandera <strong>observability_enabled</strong>. Para dashboard unificado usa además <strong>KIBANA_WINDOWS_UNIFIED_DASHBOARD_ID</strong>.
           </div>
         </div>
       )
@@ -221,7 +228,9 @@ export default function VmDetailPage() {
 
     if (!activeDashboard?.configured || !activeDashboard?.embedUrl) {
       const osTypeUpper = (observability.osType || 'OS').toUpperCase()
-      const envName = `KIBANA_${osTypeUpper}_${tab.toUpperCase()}_DASHBOARD_ID`
+      const envName = tab === 'unified'
+        ? `KIBANA_${osTypeUpper}_UNIFIED_DASHBOARD_ID`
+        : `KIBANA_${osTypeUpper}_${tab.toUpperCase()}_DASHBOARD_ID`
 
       return (
         <div className="card cardPad">
@@ -236,7 +245,7 @@ export default function VmDetailPage() {
       <div className="embedSection">
         <div className="embedToolbar">
           <div>
-            <div className="embedTitle">{TAB_LABELS[tab]}</div>
+            <div className="embedTitle">{tabLabels[tab]}</div>
             <div className="embedSub">Filtro aplicado: host.name = {observability.hostName}</div>
           </div>
 

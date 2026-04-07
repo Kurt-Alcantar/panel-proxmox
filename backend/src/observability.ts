@@ -38,9 +38,11 @@ function buildDashboardUrl(baseUrl: string, dashboardId: string | undefined, hos
 
 function getDashboardIds(osType: SupportedOsType) {
   const prefix = osType === 'windows' ? 'KIBANA_WINDOWS' : 'KIBANA_LINUX'
+  const unifiedDashboardId = process.env[`${prefix}_UNIFIED_DASHBOARD_ID`] || process.env[`${prefix}_OVERVIEW_DASHBOARD_ID`]
 
   return {
-    overview: process.env[`${prefix}_OVERVIEW_DASHBOARD_ID`],
+    unified: unifiedDashboardId,
+    overview: unifiedDashboardId,
     services: process.env[`${prefix}_SERVICES_DASHBOARD_ID`],
     logs: process.env[`${prefix}_LOGS_DASHBOARD_ID`],
     events: process.env[`${prefix}_EVENTS_DASHBOARD_ID`],
@@ -91,6 +93,7 @@ export function getVmObservability(vm: {
   }
 
   const dashboardIds = getDashboardIds(osType)
+  const hasUnified = Boolean(dashboardIds.unified)
 
   return {
     enabled: true,
@@ -98,7 +101,14 @@ export function getVmObservability(vm: {
     hostName,
     baseUrl,
     services,
+    mode: hasUnified ? 'unified' : 'split',
     dashboards: {
+      unified: {
+        id: dashboardIds.unified || null,
+        configured: Boolean(dashboardIds.unified),
+        embedUrl: buildDashboardUrl(baseUrl, dashboardIds.unified, hostName, true),
+        openUrl: buildDashboardUrl(baseUrl, dashboardIds.unified, hostName, false)
+      },
       overview: {
         id: dashboardIds.overview || null,
         configured: Boolean(dashboardIds.overview),

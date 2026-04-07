@@ -44,7 +44,7 @@ export class VmController {
       SELECT r.code
       FROM user_roles ur
       JOIN roles r ON r.id = ur.role_id
-      WHERE ur.user_id = ${user.id}
+      WHERE ur.user_id = ${user.id}::uuid
     `;
 
     const roleCodes = roles.map((row) => row.code);
@@ -144,7 +144,10 @@ export class VmController {
 
     const observability = getVmObservability(vm);
     if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
-      return { enabled: false, reason: 'Dashboard nativo de seguridad disponible solo para Windows por ahora.' };
+      return {
+        enabled: false,
+        reason: 'Dashboard nativo de seguridad disponible solo para Windows por ahora.'
+      };
     }
 
     return {
@@ -161,7 +164,10 @@ export class VmController {
 
     const observability = getVmObservability(vm);
     if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
-      return { enabled: false, reason: 'Panel nativo de servicios disponible solo para Windows por ahora.' };
+      return {
+        enabled: false,
+        reason: 'Panel nativo de servicios disponible solo para Windows por ahora.'
+      };
     }
 
     return {
@@ -315,49 +321,67 @@ export class VmController {
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/start')
   async startVM(@Param('vmid') vmid: string, @Req() req: any) {
-    const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     await this.proxmox.startVM(Number(vmid));
+
     await this.audit.log({
       userId: user?.id ?? null,
       action: 'vm.start',
       target: `vm:${vmid}`,
       result: 'success'
     });
+
     return { status: 'started', vmid: Number(vmid) };
   }
 
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/stop')
   async stopVM(@Param('vmid') vmid: string, @Req() req: any) {
-    const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     await this.proxmox.stopVM(Number(vmid));
+
     await this.audit.log({
       userId: user?.id ?? null,
       action: 'vm.stop',
       target: `vm:${vmid}`,
       result: 'success'
     });
+
     return { status: 'stopped', vmid: Number(vmid) };
   }
 
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/restart')
   async restartVM(@Param('vmid') vmid: string, @Req() req: any) {
-    const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     await this.proxmox.restartVM(Number(vmid));
+
     await this.audit.log({
       userId: user?.id ?? null,
       action: 'vm.restart',
       target: `vm:${vmid}`,
       result: 'success'
     });
+
     return { status: 'restarted', vmid: Number(vmid) };
   }
 
   @UseGuards(AuthGuard)
   @Post('vms/:vmid/console')
   async openConsole(@Param('vmid') vmid: string, @Req() req: any) {
-    const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
     const consoleData = await this.proxmox.getVmConsole(Number(vmid));
 
     await this.audit.log({

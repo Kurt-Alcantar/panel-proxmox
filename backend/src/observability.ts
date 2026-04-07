@@ -7,47 +7,12 @@ const DEFAULT_SERVICES: Record<SupportedOsType, string[]> = {
   linux: ['plesk', 'cloudflare', 'docker', 'nginx']
 }
 
-function normalizeOsType(value?: string | null): SupportedOsType | null {
+export function normalizeOsType(value?: string | null): SupportedOsType | null {
   if (!value) return null
-
   const normalized = value.toLowerCase().trim()
-
   if (normalized === 'windows') return 'windows'
   if (normalized === 'linux') return 'linux'
-
   return null
-}
-
-function escapeKuery(value: string) {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\"/g, '\\"')
-}
-
-function buildDashboardUrl(baseUrl: string, dashboardId: string | undefined, hostName: string, embed = true) {
-  if (!dashboardId) return null
-
-  const safeHostName = escapeKuery(hostName)
-  const globalState = encodeURIComponent(`(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-24h,to:now))`)
-  const appState = encodeURIComponent(`(query:(language:kuery,query:'host.name:"${safeHostName}"'))`)
-  const embedParam = embed ? 'embed=true&' : ''
-
-  return `${baseUrl}/app/dashboards#/view/${dashboardId}?${embedParam}_g=${globalState}&_a=${appState}`
-}
-
-function getDashboardIds(osType: SupportedOsType) {
-  const prefix = osType === 'windows' ? 'KIBANA_WINDOWS' : 'KIBANA_LINUX'
-  const unifiedDashboardId = process.env[`${prefix}_UNIFIED_DASHBOARD_ID`] || process.env[`${prefix}_OVERVIEW_DASHBOARD_ID`]
-
-  return {
-    unified: unifiedDashboardId,
-    overview: unifiedDashboardId,
-    services: process.env[`${prefix}_SERVICES_DASHBOARD_ID`],
-    logs: process.env[`${prefix}_LOGS_DASHBOARD_ID`],
-    events: process.env[`${prefix}_EVENTS_DASHBOARD_ID`],
-    audit: process.env[`${prefix}_AUDIT_DASHBOARD_ID`]
-  }
 }
 
 export function getVmMonitoredServices(vm: {
@@ -64,7 +29,6 @@ export function getVmMonitoredServices(vm: {
   }
 
   if (!osType) return []
-
   return DEFAULT_SERVICES[osType]
 }
 
@@ -81,64 +45,12 @@ export function getVmObservability(vm: {
   const baseUrl = vm.kibana_base_url || DEFAULT_KIBANA_BASE_URL
   const services = getVmMonitoredServices(vm)
 
-  if (!vm.observability_enabled || !hostName || !osType) {
-    return {
-      enabled: false,
-      osType,
-      hostName,
-      baseUrl,
-      services,
-      dashboards: null
-    }
-  }
-
-  const dashboardIds = getDashboardIds(osType)
-  const hasUnified = Boolean(dashboardIds.unified)
-
   return {
-    enabled: true,
+    enabled: Boolean(vm.observability_enabled && hostName && osType),
     osType,
     hostName,
     baseUrl,
     services,
-    mode: hasUnified ? 'unified' : 'split',
-    dashboards: {
-      unified: {
-        id: dashboardIds.unified || null,
-        configured: Boolean(dashboardIds.unified),
-        embedUrl: buildDashboardUrl(baseUrl, dashboardIds.unified, hostName, true),
-        openUrl: buildDashboardUrl(baseUrl, dashboardIds.unified, hostName, false)
-      },
-      overview: {
-        id: dashboardIds.overview || null,
-        configured: Boolean(dashboardIds.overview),
-        embedUrl: buildDashboardUrl(baseUrl, dashboardIds.overview, hostName, true),
-        openUrl: buildDashboardUrl(baseUrl, dashboardIds.overview, hostName, false)
-      },
-      services: {
-        id: dashboardIds.services || null,
-        configured: Boolean(dashboardIds.services),
-        embedUrl: buildDashboardUrl(baseUrl, dashboardIds.services, hostName, true),
-        openUrl: buildDashboardUrl(baseUrl, dashboardIds.services, hostName, false)
-      },
-      logs: {
-        id: dashboardIds.logs || null,
-        configured: Boolean(dashboardIds.logs),
-        embedUrl: buildDashboardUrl(baseUrl, dashboardIds.logs, hostName, true),
-        openUrl: buildDashboardUrl(baseUrl, dashboardIds.logs, hostName, false)
-      },
-      events: {
-        id: dashboardIds.events || null,
-        configured: Boolean(dashboardIds.events),
-        embedUrl: buildDashboardUrl(baseUrl, dashboardIds.events, hostName, true),
-        openUrl: buildDashboardUrl(baseUrl, dashboardIds.events, hostName, false)
-      },
-      audit: {
-        id: dashboardIds.audit || null,
-        configured: Boolean(dashboardIds.audit),
-        embedUrl: buildDashboardUrl(baseUrl, dashboardIds.audit, hostName, true),
-        openUrl: buildDashboardUrl(baseUrl, dashboardIds.audit, hostName, false)
-      }
-    }
+    mode: 'native'
   }
 }

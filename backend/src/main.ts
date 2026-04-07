@@ -5,10 +5,12 @@ import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
 import { AuthController } from './auth.controller';
 import { AuditService } from './audit.service';
+import { ElasticsearchService } from './elasticsearch.service';
+import { ObservabilityNativeService } from './observability-native.service';
 
 @Module({
   controllers: [VmController, AuthController],
-  providers: [PrismaService, ProxmoxService,AuditService],
+  providers: [PrismaService, ProxmoxService, AuditService, ElasticsearchService, ObservabilityNativeService],
 })
 class AppModule {}
 

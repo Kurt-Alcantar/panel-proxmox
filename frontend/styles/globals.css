@@ -1147,3 +1147,224 @@ input {
     grid-template-columns: 1fr;
   }
 }
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.metricGrid.compact {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
+.metricCard {
+  padding: 18px;
+}
+
+.metricTitle {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.metricValue {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.tone-success { border-color: rgba(34, 197, 94, 0.35); }
+.tone-danger { border-color: rgba(220, 38, 38, 0.35); }
+.tone-warning { border-color: rgba(245, 158, 11, 0.35); }
+.tone-info { border-color: rgba(56, 189, 248, 0.35); }
+
+.nativeGridTwo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.compactInfoGrid {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.infoItem {
+  background: rgba(23, 17, 41, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.infoLabel {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.infoValue {
+  font-size: 16px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.detailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.detailMeta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tabBar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.tabBtn {
+  border: 1px solid var(--border);
+  background: rgba(23, 17, 41, 0.92);
+  color: var(--text);
+  padding: 11px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.tabBtn.active {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.serviceChips.native {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.serviceChip {
+  display: inline-flex;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.mutedChip {
+  opacity: 0.7;
+}
+
+.miniBarList {
+  display: grid;
+  gap: 12px;
+}
+
+.miniBarRow {
+  display: grid;
+  gap: 6px;
+}
+
+.miniBarTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.miniBarLabel {
+  color: var(--text);
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.miniBarCount {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.miniBarTrack {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+
+.miniBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+  border-radius: 999px;
+}
+
+.summaryActions {
+  margin-top: 16px;
+}
+
+.portal-info, .emptyState, .muted {
+  color: var(--muted);
+}
+
+@media (max-width: 1200px) {
+  .metricGrid,
+  .metricGrid.compact,
+  .compactInfoGrid,
+  .infoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nativeGridTwo {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .pageShell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+  }
+
+  .mainArea {
+    padding: 16px;
+  }
+
+  .metricGrid,
+  .metricGrid.compact,
+  .compactInfoGrid,
+  .infoGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .detailHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

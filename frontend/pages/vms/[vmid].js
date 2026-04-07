@@ -2,18 +2,72 @@ import { useRouter } from 'next/router'
 import { useEffect, useMemo, useState } from 'react'
 import AppShell from '../../components/AppShell'
 
-const SPLIT_TAB_LABELS = {
+const WINDOWS_TABS = {
   overview: 'Resumen',
+  security: 'Seguridad',
   services: 'Servicios',
-  logs: 'Logs',
   events: 'Eventos',
   audit: 'Auditoría'
 }
 
-const UNIFIED_TAB_LABELS = {
-  overview: 'Resumen',
-  unified: 'Dashboard',
-  audit: 'Auditoría'
+function KpiCard({ label, value, tone = 'default' }) {
+  return (
+    <div className={`card metricCard tone-${tone}`}>
+      <div className="metricTitle">{label}</div>
+      <div className="metricValue">{value ?? '-'}</div>
+    </div>
+  )
+}
+
+function MiniBarList({ rows, emptyText = 'Sin datos' }) {
+  if (!rows || rows.length === 0) return <div className="emptyState">{emptyText}</div>
+
+  const max = Math.max(...rows.map((row) => row.count || 0), 1)
+
+  return (
+    <div className="miniBarList">
+      {rows.map((row) => (
+        <div className="miniBarRow" key={row.key}>
+          <div className="miniBarTop">
+            <span className="miniBarLabel">{row.key || '(vacío)'}</span>
+            <span className="miniBarCount">{row.count}</span>
+          </div>
+          <div className="miniBarTrack">
+            <div className="miniBarFill" style={{ width: `${(row.count / max) * 100}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DataTable({ columns, rows, emptyText = 'Sin datos' }) {
+  if (!rows || rows.length === 0) {
+    return <div className="emptyState">{emptyText}</div>
+  }
+
+  return (
+    <div className="tableWrap">
+      <table className="table">
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key}>{column.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.id || row.timestamp || index}>
+              {columns.map((column) => (
+                <td key={column.key}>{row[column.key] || '-'}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 export default function VmDetailPage() {
@@ -21,77 +75,102 @@ export default function VmDetailPage() {
   const { vmid } = router.query
 
   const [vm, setVm] = useState(null)
+  const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('overview')
+  const [overview, setOverview] = useState(null)
+  const [security, setSecurity] = useState(null)
+  const [services, setServices] = useState(null)
+  const [events, setEvents] = useState(null)
   const [auditRows, setAuditRows] = useState([])
-  const [auditLoading, setAuditLoading] = useState(false)
-  const [auditError, setAuditError] = useState('')
+  const [tabLoading, setTabLoading] = useState(false)
+  const [tabError, setTabError] = useState('')
+
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+
+  const apiGet = async (path) => {
+    const activeToken = localStorage.getItem('token')
+    if (!activeToken) {
+      router.replace('/login')
+      return null
+    }
+
+    const res = await fetch(path, {
+      headers: {
+        Authorization: `Bearer ${activeToken}`
+      }
+    })
+
+    if (res.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('refresh_token')
+      router.replace('/login')
+      return null
+    }
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.message || 'Error consultando API')
+    }
+
+    return res.json()
+  }
 
   const fetchVm = async () => {
-    const token = localStorage.getItem('token')
-
-    if (!token || !vmid) return
+    if (!vmid || !token) return
 
     try {
       setLoading(true)
-      const res = await fetch(`/api/vms/${vmid}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
-
-      if (res.status === 401) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('refresh_token')
-        router.replace('/login')
-        return
-      }
-
-      if (!res.ok) {
-        throw new Error('No se pudo cargar la VM')
-      }
-
-      const data = await res.json()
-      setVm(data)
+      setError('')
+      const data = await apiGet(`/api/vms/${vmid}`)
+      if (data) setVm(data)
     } catch (err) {
-      setError(err.message || 'Error cargando detalle')
+      setError(err.message || 'No se pudo cargar la VM')
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchAudit = async () => {
-    const token = localStorage.getItem('token')
-
-    if (!token || !vmid) return
+  const fetchTabData = async () => {
+    if (!vmid || !token) return
+    if (tab === 'overview' && overview) return
+    if (tab === 'security' && security) return
+    if (tab === 'services' && services) return
+    if (tab === 'events' && events) return
+    if (tab === 'audit' && auditRows.length) return
 
     try {
-      setAuditLoading(true)
-      setAuditError('')
-      const res = await fetch(`/api/vms/${vmid}/audit`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
+      setTabLoading(true)
+      setTabError('')
 
-      if (res.status === 401) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('refresh_token')
-        router.replace('/login')
-        return
+      if (tab === 'overview') {
+        const data = await apiGet(`/api/vms/${vmid}/observability/overview`)
+        if (data) setOverview(data)
       }
 
-      if (!res.ok) {
-        throw new Error('No se pudo cargar la auditoría de la VM')
+      if (tab === 'security') {
+        const data = await apiGet(`/api/vms/${vmid}/observability/security`)
+        if (data) setSecurity(data)
       }
 
-      const data = await res.json()
-      setAuditRows(data)
+      if (tab === 'services') {
+        const data = await apiGet(`/api/vms/${vmid}/observability/services`)
+        if (data) setServices(data)
+      }
+
+      if (tab === 'events') {
+        const data = await apiGet(`/api/vms/${vmid}/observability/events`)
+        if (data) setEvents(data)
+      }
+
+      if (tab === 'audit') {
+        const data = await apiGet(`/api/vms/${vmid}/audit`)
+        if (data) setAuditRows(data)
+      }
     } catch (err) {
-      setAuditError(err.message || 'Error cargando auditoría')
+      setTabError(err.message || 'No se pudo cargar la vista')
     } finally {
-      setAuditLoading(false)
+      setTabLoading(false)
     }
   }
 
@@ -100,32 +179,8 @@ export default function VmDetailPage() {
   }, [vmid])
 
   useEffect(() => {
-    if (tab === 'audit') {
-      fetchAudit()
-    }
+    fetchTabData()
   }, [tab, vmid])
-
-  const badgeClass = (status) => {
-    if (status === 'running') return 'badge running'
-    if (status === 'stopped') return 'badge stopped'
-    return 'badge unknown'
-  }
-
-  const openConsole = async () => {
-    const token = localStorage.getItem('token')
-
-    const res = await fetch(`/api/vms/${vmid}/console`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-
-    const data = await res.json()
-    if (data.url) {
-      window.open(data.url, '_blank', 'noopener,noreferrer')
-    }
-  }
 
   const formatBytes = (value) => {
     const n = Number(value || 0)
@@ -133,189 +188,242 @@ export default function VmDetailPage() {
     return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`
   }
 
-  const observability = vm?.observability || null
-  const tabLabels = observability?.mode === 'unified' ? UNIFIED_TAB_LABELS : SPLIT_TAB_LABELS
-  const activeDashboard = useMemo(() => {
-    if (!observability?.dashboards) return null
-    return observability.dashboards[tab] || null
-  }, [observability, tab])
+  const formatPct = (value) => {
+    if (value === null || value === undefined) return '-'
+    return `${Number(value).toFixed(1)}%`
+  }
+
+  const observability = vm?.observability || { enabled: false, services: [] }
 
   const renderOverview = () => (
     <>
       <div className="metricGrid">
-        <div className="card metricCard">
-          <div className="metricTitle">Estado VM</div>
-          <div className="metricValue">{vm.status || '-'}</div>
-        </div>
-        <div className="card metricCard">
-          <div className="metricTitle">vCPU</div>
-          <div className="metricValue">{vm.cpu ?? '-'}</div>
-        </div>
-        <div className="card metricCard">
-          <div className="metricTitle">Memoria</div>
-          <div className="metricValue">{formatBytes(vm.memory)}</div>
-        </div>
-        <div className="card metricCard">
-          <div className="metricTitle">Disco</div>
-          <div className="metricValue">{formatBytes(vm.disk)}</div>
-        </div>
+        <KpiCard label="Estado VM" value={vm?.status || '-'} />
+        <KpiCard label="vCPU" value={vm?.cpu ?? '-'} />
+        <KpiCard label="Memoria" value={formatBytes(vm?.memory)} />
+        <KpiCard label="Disco" value={formatBytes(vm?.disk)} />
       </div>
 
-      <div className="infoGrid">
-        <div className="infoItem">
-          <div className="infoLabel">VMID</div>
-          <div className="infoValue">{vm.vmid}</div>
+      <div className="nativeGridTwo">
+        <div className="card cardPad">
+          <div className="sectionTitle">Resumen operativo 24h</div>
+          {tabLoading && !overview && <div className="muted">Cargando...</div>}
+          {overview?.enabled === false && <div className="emptyState">{overview.reason}</div>}
+          {overview?.enabled !== false && overview && (
+            <>
+              <div className="metricGrid compact">
+                <KpiCard label="CPU promedio" value={formatPct(overview.cpuAvgPct)} tone="info" />
+                <KpiCard label="Memoria usada" value={formatPct(overview.memoryUsedPct)} tone="info" />
+                <KpiCard label="Disco usado" value={formatPct(overview.diskUsedPct)} tone="info" />
+                <KpiCard label="Errores 24h" value={overview.errorCount24h} tone="danger" />
+              </div>
+              <div className="infoGrid compactInfoGrid">
+                <div className="infoItem"><div className="infoLabel">Último check-in</div><div className="infoValue">{overview.lastSeen || '-'}</div></div>
+                <div className="infoItem"><div className="infoLabel">host.name Elastic</div><div className="infoValue">{overview.hostName || '-'}</div></div>
+                <div className="infoItem"><div className="infoLabel">SO</div><div className="infoValue">{overview.osType || '-'}</div></div>
+                <div className="infoItem"><div className="infoLabel">Kibana</div><div className="infoValue">{overview.kibanaUrl || '-'}</div></div>
+              </div>
+            </>
+          )}
         </div>
-        <div className="infoItem">
-          <div className="infoLabel">Nombre</div>
-          <div className="infoValue">{vm.name}</div>
-        </div>
-        <div className="infoItem">
-          <div className="infoLabel">Nodo</div>
-          <div className="infoValue">{vm.node}</div>
-        </div>
-        <div className="infoItem">
-          <div className="infoLabel">Pool</div>
-          <div className="infoValue">{vm.pool_id || '-'}</div>
-        </div>
-        <div className="infoItem">
-          <div className="infoLabel">SO</div>
-          <div className="infoValue">{vm.os_type || '-'}</div>
-        </div>
-        <div className="infoItem">
-          <div className="infoLabel">host.name Elastic</div>
-          <div className="infoValue">{observability?.hostName || '-'}</div>
-        </div>
-      </div>
 
-      <div className="card cardPad observabilitySummary">
-        <div className="summaryHead">
-          <div>
-            <h3>Observabilidad por VM</h3>
-            <p>
-              Esta sección abre paneles separados por VM con filtro oficial en <strong>host.name</strong>.
-            </p>
+        <div className="card cardPad">
+          <div className="sectionTitle">Servicios monitoreados</div>
+          <div className="serviceChips native">
+            {(observability.services || []).map((service) => (
+              <span key={service} className="serviceChip">{service}</span>
+            ))}
+            {!observability.services?.length && <span className="muted">Sin servicios definidos</span>}
           </div>
-          {observability?.baseUrl && (
-            <a className="btn btnSecondary" href={observability.baseUrl} target="_blank" rel="noreferrer">
-              Abrir Kibana
-            </a>
-          )}
+          <div className="summaryActions">
+            {observability.baseUrl && (
+              <a className="btn btnSecondary" href={observability.baseUrl} target="_blank" rel="noreferrer">Abrir Kibana</a>
+            )}
+          </div>
         </div>
+      </div>
 
-        <div className="serviceChips">
-          {(observability?.services || []).map((service) => (
-            <span key={service} className="serviceChip">{service}</span>
-          ))}
-          {(!observability?.services || observability.services.length === 0) && (
-            <span className="muted">Sin servicios definidos</span>
-          )}
-        </div>
+      <div className="card cardPad">
+        <div className="sectionTitle">Errores recientes</div>
+        <DataTable
+          columns={[
+            { key: 'timestamp', label: 'Fecha' },
+            { key: 'level', label: 'Nivel' },
+            { key: 'serviceName', label: 'Servicio' },
+            { key: 'processName', label: 'Proceso' },
+            { key: 'dataset', label: 'Dataset' },
+            { key: 'message', label: 'Mensaje' }
+          ]}
+          rows={overview?.recentErrors || []}
+          emptyText="Sin errores en las últimas 24 horas."
+        />
       </div>
     </>
   )
 
-  const renderDashboardTab = () => {
-    if (!observability?.enabled) {
-      return (
-        <div className="card cardPad">
-          <div className="errorBox">
-            Esta VM todavía no tiene observabilidad habilitada. Debes definir al menos <strong>os_type</strong>, <strong>elastic_host_name</strong> y dejar activa la bandera <strong>observability_enabled</strong>. Para dashboard unificado usa además <strong>KIBANA_WINDOWS_UNIFIED_DASHBOARD_ID</strong>.
-          </div>
-        </div>
-      )
-    }
-
-    if (!activeDashboard?.configured || !activeDashboard?.embedUrl) {
-      const osTypeUpper = (observability.osType || 'OS').toUpperCase()
-      const envName = tab === 'unified'
-        ? `KIBANA_${osTypeUpper}_UNIFIED_DASHBOARD_ID`
-        : `KIBANA_${osTypeUpper}_${tab.toUpperCase()}_DASHBOARD_ID`
-
-      return (
-        <div className="card cardPad">
-          <div className="emptyState">
-            Falta configurar el dashboard de esta vista. Define la variable de entorno <strong>{envName}</strong> en el servicio <strong>backend</strong> y reinicia el stack.
-          </div>
-        </div>
-      )
+  const renderSecurity = () => {
+    if (security?.enabled === false) {
+      return <div className="card cardPad"><div className="emptyState">{security.reason}</div></div>
     }
 
     return (
-      <div className="embedSection">
-        <div className="embedToolbar">
-          <div>
-            <div className="embedTitle">{tabLabels[tab]}</div>
-            <div className="embedSub">Filtro aplicado: host.name = {observability.hostName}</div>
+      <>
+        <div className="metricGrid compact">
+          <KpiCard label="Logons exitosos" value={security?.kpis?.successLogons24h ?? '-'} tone="success" />
+          <KpiCard label="Logons fallidos" value={security?.kpis?.failedLogons24h ?? '-'} tone="danger" />
+          <KpiCard label="Bloqueos" value={security?.kpis?.lockouts24h ?? '-'} tone="warning" />
+          <KpiCard label="Privilegios" value={security?.kpis?.privilegeEvents24h ?? '-'} tone="warning" />
+          <KpiCard label="Cambios usuario" value={security?.kpis?.userChanges24h ?? '-'} tone="info" />
+          <KpiCard label="Grupos privilegiados" value={security?.kpis?.groupChanges24h ?? '-'} tone="info" />
+          <KpiCard label="Accesos remotos" value={security?.kpis?.remoteAccess24h ?? '-'} tone="info" />
+        </div>
+
+        <div className="nativeGridTwo">
+          <div className="card cardPad">
+            <div className="sectionTitle">Fallos por usuario</div>
+            <MiniBarList rows={security?.failuresByUser || []} emptyText="Sin fallos agrupados por usuario" />
           </div>
-
-          {activeDashboard.openUrl && (
-            <a className="btn btnSecondary" href={activeDashboard.openUrl} target="_blank" rel="noreferrer">
-              Abrir en Kibana
-            </a>
-          )}
+          <div className="card cardPad">
+            <div className="sectionTitle">Fallos por IP</div>
+            <MiniBarList rows={security?.failuresByIp || []} emptyText="Sin fallos agrupados por IP" />
+          </div>
         </div>
 
-        <div className="embedWrap large">
-          <iframe src={activeDashboard.embedUrl} title={`Kibana ${tabLabels[tab]}`} />
+        <div className="card cardPad">
+          <div className="sectionTitle">Logons exitosos recientes</div>
+          <DataTable columns={[
+            { key: 'timestamp', label: 'Fecha' },
+            { key: 'user', label: 'Usuario' },
+            { key: 'sourceIp', label: 'IP' },
+            { key: 'logonType', label: 'Tipo logon' },
+            { key: 'message', label: 'Mensaje' }
+          ]} rows={security?.recentSuccess || []} />
         </div>
-      </div>
+
+        <div className="card cardPad">
+          <div className="sectionTitle">Logons fallidos recientes</div>
+          <DataTable columns={[
+            { key: 'timestamp', label: 'Fecha' },
+            { key: 'user', label: 'Usuario' },
+            { key: 'sourceIp', label: 'IP' },
+            { key: 'status', label: 'Status' },
+            { key: 'subStatus', label: 'SubStatus' },
+            { key: 'message', label: 'Mensaje' }
+          ]} rows={security?.recentFailed || []} />
+        </div>
+
+        <div className="nativeGridTwo">
+          <div className="card cardPad">
+            <div className="sectionTitle">Eventos de privilegio</div>
+            <DataTable columns={[
+              { key: 'timestamp', label: 'Fecha' },
+              { key: 'eventCode', label: 'Evento' },
+              { key: 'user', label: 'Usuario' },
+              { key: 'privilegeList', label: 'Privilegios' },
+              { key: 'message', label: 'Mensaje' }
+            ]} rows={security?.privilegeEvents || []} />
+          </div>
+          <div className="card cardPad">
+            <div className="sectionTitle">Cambios administrativos</div>
+            <DataTable columns={[
+              { key: 'timestamp', label: 'Fecha' },
+              { key: 'eventCode', label: 'Evento' },
+              { key: 'targetUser', label: 'Usuario objetivo' },
+              { key: 'actorUser', label: 'Actor' },
+              { key: 'memberName', label: 'Miembro' },
+              { key: 'message', label: 'Mensaje' }
+            ]} rows={security?.userChanges || []} />
+          </div>
+        </div>
+
+        <div className="card cardPad">
+          <div className="sectionTitle">RDP / WinRM / PSRemoting</div>
+          <DataTable columns={[
+            { key: 'timestamp', label: 'Fecha' },
+            { key: 'user', label: 'Usuario' },
+            { key: 'sourceIp', label: 'IP' },
+            { key: 'processName', label: 'Proceso' },
+            { key: 'logonType', label: 'Tipo' },
+            { key: 'message', label: 'Mensaje' }
+          ]} rows={security?.remoteAccess || []} />
+        </div>
+      </>
     )
   }
 
-  const renderAuditTab = () => (
-    <div className="auditVmLayout">
-      <div className="card cardPad">
-        <div className="sectionTitle">Auditoría del portal</div>
-        {auditLoading && <p className="muted">Cargando...</p>}
-        {auditError && <div className="errorBox">{auditError}</div>}
+  const renderServices = () => {
+    if (services?.enabled === false) {
+      return <div className="card cardPad"><div className="emptyState">{services.reason}</div></div>
+    }
 
-        {!auditLoading && !auditError && auditRows.length === 0 && (
-          <div className="emptyState">Sin acciones registradas para esta VM.</div>
-        )}
+    return (
+      <>
+        <div className="card cardPad">
+          <div className="sectionTitle">Estado de servicios</div>
+          <DataTable columns={[
+            { key: 'timestamp', label: 'Fecha' },
+            { key: 'serviceName', label: 'Servicio' },
+            { key: 'state', label: 'Estado' },
+            { key: 'message', label: 'Mensaje' }
+          ]} rows={services?.rows || []} emptyText="No se detectaron estados recientes para los servicios configurados." />
+        </div>
 
-        {!auditLoading && auditRows.length > 0 && (
-          <div className="tableWrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>User ID</th>
-                  <th>Acción</th>
-                  <th>Resultado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {auditRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.created_at}</td>
-                    <td>{row.user_id || '-'}</td>
-                    <td>{row.action}</td>
-                    <td>{row.result}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="card cardPad">
+          <div className="sectionTitle">Servicios configurados sin telemetría reciente</div>
+          <div className="serviceChips native">
+            {(services?.missingConfiguredServices || []).map((service) => (
+              <span key={service} className="serviceChip mutedChip">{service}</span>
+            ))}
+            {(!services?.missingConfiguredServices || services.missingConfiguredServices.length === 0) && (
+              <span className="muted">Todos los servicios configurados tuvieron al menos un evento reciente.</span>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      </>
+    )
+  }
 
-      {renderDashboardTab()}
+  const renderEvents = () => (
+    <div className="card cardPad">
+      <div className="sectionTitle">Eventos recientes del host</div>
+      <DataTable columns={[
+        { key: 'timestamp', label: 'Fecha' },
+        { key: 'channel', label: 'Canal' },
+        { key: 'eventCode', label: 'Evento' },
+        { key: 'action', label: 'Acción' },
+        { key: 'level', label: 'Nivel' },
+        { key: 'processName', label: 'Proceso' },
+        { key: 'serviceName', label: 'Servicio' },
+        { key: 'sourceIp', label: 'IP' },
+        { key: 'message', label: 'Mensaje' }
+      ]} rows={events?.rows || []} />
     </div>
   )
 
-  const renderActiveTab = () => {
+  const renderAudit = () => (
+    <div className="card cardPad">
+      <div className="sectionTitle">Auditoría del portal</div>
+      <DataTable columns={[
+        { key: 'created_at', label: 'Fecha' },
+        { key: 'user_id', label: 'User ID' },
+        { key: 'action', label: 'Acción' },
+        { key: 'result', label: 'Resultado' }
+      ]} rows={auditRows || []} emptyText="Sin acciones registradas para esta VM." />
+    </div>
+  )
+
+  const activeTabView = useMemo(() => {
     if (tab === 'overview') return renderOverview()
-    if (tab === 'audit') return renderAuditTab()
-    return renderDashboardTab()
-  }
+    if (tab === 'security') return renderSecurity()
+    if (tab === 'services') return renderServices()
+    if (tab === 'events') return renderEvents()
+    if (tab === 'audit') return renderAudit()
+    return null
+  }, [tab, vm, overview, security, services, events, auditRows, tabLoading])
 
   return (
-    <AppShell
-      title={vm ? vm.name : 'Detalle VM'}
-      subtitle="Vista operativa, métricas, servicios, logs y auditoría por VM."
-    >
-      {loading && <p className="muted">Cargando...</p>}
+    <AppShell title={vm ? vm.name : 'Detalle VM'} subtitle="Dashboard nativo Windows sin iframe, consumiendo Elasticsearch directamente.">
+      {loading && <div className="portal-info">Cargando...</div>}
       {error && <div className="errorBox">{error}</div>}
 
       {!loading && vm && (
@@ -323,7 +431,7 @@ export default function VmDetailPage() {
           <div className="detailHeader">
             <div>
               <div className="detailMeta">
-                <span className={badgeClass(vm.status)}>{vm.status || 'unknown'}</span>
+                <span className={`badge ${vm.status === 'running' ? 'running' : vm.status === 'stopped' ? 'stopped' : 'unknown'}`}>{vm.status || 'unknown'}</span>
                 <span className="badge unknown">Pool: {vm.pool_id || '-'}</span>
                 <span className="badge unknown">VMID: {vm.vmid}</span>
                 <span className="badge unknown">SO: {vm.os_type || '-'}</span>
@@ -331,28 +439,32 @@ export default function VmDetailPage() {
             </div>
 
             <div className="actions">
-              <button className="btn btnSecondary" onClick={() => router.push('/vms')}>
-                Volver
-              </button>
-              <button className="btn btnPrimary" onClick={openConsole}>
-                Abrir consola
-              </button>
+              <button className="btn btnSecondary" onClick={() => router.push('/vms')}>Volver</button>
+              <button className="btn btnPrimary" onClick={async () => {
+                const res = await fetch(`/api/vms/${vmid}/console`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+                const data = await res.json()
+                if (data?.url) window.open(data.url, '_blank', 'noopener,noreferrer')
+              }}>Abrir consola</button>
             </div>
           </div>
 
+          <div className="infoGrid compactInfoGrid">
+            <div className="infoItem"><div className="infoLabel">Nombre</div><div className="infoValue">{vm.name}</div></div>
+            <div className="infoItem"><div className="infoLabel">Nodo</div><div className="infoValue">{vm.node || '-'}</div></div>
+            <div className="infoItem"><div className="infoLabel">host.name Elastic</div><div className="infoValue">{observability.hostName || '-'}</div></div>
+            <div className="infoItem"><div className="infoLabel">Observabilidad</div><div className="infoValue">{observability.enabled ? 'Habilitada' : 'No habilitada'}</div></div>
+          </div>
+
           <div className="tabBar">
-            {Object.entries(tabLabels).map(([key, label]) => (
-              <button
-                key={key}
-                className={`tabBtn ${tab === key ? 'active' : ''}`}
-                onClick={() => setTab(key)}
-              >
-                {label}
-              </button>
+            {Object.entries(WINDOWS_TABS).map(([key, label]) => (
+              <button key={key} className={`tabBtn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</button>
             ))}
           </div>
 
-          {renderActiveTab()}
+          {tabLoading && <div className="portal-info">Cargando vista...</div>}
+          {tabError && <div className="errorBox">{tabError}</div>}
+
+          {activeTabView}
         </>
       )}
     </AppShell>

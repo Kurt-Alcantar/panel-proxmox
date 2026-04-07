@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+  UnauthorizedException
+} from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { ProxmoxService } from './proxmox.service';
 import { AuthGuard } from './auth.guard';
@@ -20,36 +28,29 @@ export class VmController {
       ...vm,
       memory: vm.memory !== null ? vm.memory.toString() : null,
       disk: vm.disk !== null ? vm.disk.toString() : null
-    }
+    };
   }
 
-  private async getUserContext(keycloakId: string) {
-    const rows = await this.prisma.$queryRaw<Array<{
-      id: string
-      email: string
-      tenant_group_id: string | null
-      roles: string[]
-    }>>`
-      SELECT
-        u.id,
-        u.email,
-        u.tenant_group_id,
-        COALESCE(
-          array_agg(DISTINCT r.code) FILTER (WHERE r.code IS NOT NULL),
-          ARRAY[]::text[]
-        ) AS roles
-      FROM users u
-      LEFT JOIN user_roles ur ON ur.user_id = u.id
-      LEFT JOIN roles r ON r.id = ur.role_id
-      WHERE u.keycloak_id = ${keycloakId}
-      GROUP BY u.id, u.email, u.tenant_group_id
-    `
+  private async getUserContext(keycloakId?: string) {
+    if (!keycloakId) return null;
 
-    if (!rows.length) {
-      return null
-    }
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: keycloakId }
+    });
 
-    return rows[0]
+    if (!user) return null;
+
+    const roles = await this.prisma.$queryRaw<Array<{ code: string }>>`
+      SELECT r.code
+      FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = ${user.id}
+    `;
+
+    const roleCodes = roles.map((row) => row.code);
+    const isPlatformAdmin = roleCodes.includes('platform_admin');
+
+    return { user, roleCodes, isPlatformAdmin };
   }
 
   private async getAllowedPoolExternalIds(userContext: any) {
@@ -113,9 +114,17 @@ export class VmController {
       return { enabled: false, reason: 'Observabilidad no habilitada para esta VM' };
     }
 
-    const data = observability.osType === 'windows'
-      ? await this.observabilityNative.getOverview(observability.hostName)
-      : { cpuAvgPct: null, memoryUsedPct: null, diskUsedPct: null, errorCount24h: 0, lastSeen: null, recentErrors: [] };
+    const data =
+      observability.osType === 'windows'
+        ? await this.observabilityNative.getOverview(observability.hostName)
+        : {
+            cpuAvgPct: null,
+            memoryUsedPct: null,
+            diskUsedPct: null,
+            errorCount24h: 0,
+            lastSeen: null,
+            recentErrors: []
+          };
 
     return {
       enabled: true,
@@ -157,7 +166,10 @@ export class VmController {
 
     return {
       enabled: true,
-      ...(await this.observabilityNative.getWindowsServices(observability.hostName, getVmMonitoredServices(vm)))
+      ...(await this.observabilityNative.getWindowsServices(
+        observability.hostName,
+        getVmMonitoredServices(vm)
+      ))
     };
   }
 
@@ -204,7 +216,9 @@ export class VmController {
     const proxmoxPoolIds = bindings.map((b) => b.proxmox_pool_id);
     if (!proxmoxPoolIds.length) return [];
 
-    const pools = await this.prisma.proxmox_pools.findMany({ where: { id: { in: proxmoxPoolIds } } });
+    const pools = await this.prisma.proxmox_pools.findMany({
+      where: { id: { in: proxmoxPoolIds } }
+    });
     const poolNames = pools.map((p) => p.external_id);
 
     const vms = await this.prisma.vm_inventory.findMany({
@@ -218,66 +232,31 @@ export class VmController {
   @UseGuards(AuthGuard)
   @Get('my/vms')
   async myVMs(@Req() req: any) {
-    const keycloakId = req.user?.sub
+    const userContext = await this.getUserContext(req.user?.sub);
 
-    if (!keycloakId) {
-      throw new UnauthorizedException('Token inválido')
+    if (!userContext?.user) {
+      throw new UnauthorizedException('Usuario no encontrado');
     }
 
-    const user = await this.getUserContext(keycloakId)
+    if (userContext.isPlatformAdmin) {
+      const vms = await this.prisma.vm_inventory.findMany({
+        orderBy: { vmid: 'asc' }
+      });
 
-    if (!user) {
-      throw new UnauthorizedException('Usuario no encontrado')
+      return vms.map((vm) => this.serializeVm(vm));
     }
 
-    const roles = user.roles || []
-    const isPlatformAdmin = roles.includes('platform_admin')
+    const poolNames = await this.getAllowedPoolExternalIds(userContext);
+    if (!poolNames?.length) return [];
 
-    // platform_admin ve todas las VMs
-    if (isPlatformAdmin) {
-      return this.prisma.vm_inventory.findMany({
-        orderBy: [
-          { pool_id: 'asc' },
-          { name: 'asc' }
-        ]
-      })
-    }
+    const vms = await this.prisma.vm_inventory.findMany({
+      where: { pool_id: { in: poolNames } },
+      orderBy: { vmid: 'asc' }
+    });
 
-    // usuario normal sin tenant => no ve nada
-    if (!user.tenant_group_id) {
-      return []
-    }
-
-    // Obtener external_id de pools permitidos para el tenant_group
-    const poolRows = await this.prisma.$queryRaw<Array<{ external_id: string }>>`
-      SELECT pp.external_id
-      FROM tenant_group_pools tgp
-      JOIN proxmox_pools pp
-        ON pp.id = tgp.proxmox_pool_id
-      WHERE tgp.tenant_group_id = ${user.tenant_group_id}::uuid
-    `
-
-    const allowedPoolIds = poolRows
-      .map((r) => r.external_id)
-      .filter(Boolean)
-
-    if (!allowedPoolIds.length) {
-      return []
-    }
-
-    return this.prisma.vm_inventory.findMany({
-      where: {
-        pool_id: {
-          in: allowedPoolIds
-        }
-      },
-      orderBy: [
-        { pool_id: 'asc' },
-        { name: 'asc' }
-      ]
-    })
+    return vms.map((vm) => this.serializeVm(vm));
   }
-//fin
+
   @UseGuards(AuthGuard)
   @Post('vms/sync')
   async syncVMs() {
@@ -338,7 +317,12 @@ export class VmController {
   async startVM(@Param('vmid') vmid: string, @Req() req: any) {
     const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
     await this.proxmox.startVM(Number(vmid));
-    await this.audit.log({ userId: user?.id ?? null, action: 'vm.start', target: `vm:${vmid}`, result: 'success' });
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.start',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
     return { status: 'started', vmid: Number(vmid) };
   }
 
@@ -347,7 +331,12 @@ export class VmController {
   async stopVM(@Param('vmid') vmid: string, @Req() req: any) {
     const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
     await this.proxmox.stopVM(Number(vmid));
-    await this.audit.log({ userId: user?.id ?? null, action: 'vm.stop', target: `vm:${vmid}`, result: 'success' });
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.stop',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
     return { status: 'stopped', vmid: Number(vmid) };
   }
 
@@ -356,7 +345,12 @@ export class VmController {
   async restartVM(@Param('vmid') vmid: string, @Req() req: any) {
     const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
     await this.proxmox.restartVM(Number(vmid));
-    await this.audit.log({ userId: user?.id ?? null, action: 'vm.restart', target: `vm:${vmid}`, result: 'success' });
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.restart',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
     return { status: 'restarted', vmid: Number(vmid) };
   }
 
@@ -365,7 +359,13 @@ export class VmController {
   async openConsole(@Param('vmid') vmid: string, @Req() req: any) {
     const user = await this.prisma.users.findFirst({ where: { keycloak_id: req.user?.sub } });
     const consoleData = await this.proxmox.getVmConsole(Number(vmid));
-    await this.audit.log({ userId: user?.id ?? null, action: 'vm.console.open', target: `vm:${vmid}`, result: 'success' });
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.console.open',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
 
     return {
       vmid: Number(vmid),

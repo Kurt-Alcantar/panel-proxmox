@@ -45,11 +45,11 @@ services:
       REDIS_HOST: redis
       KEYCLOAK_URL: http://keycloak:8080
       KIBANA_BASE_URL: http://192.168.10.162:5601
-      ELASTICSEARCH_URL: http://192.168.10.162:9200
+      ELASTICSEARCH_URL: https://192.168.10.162:9200
       ELASTICSEARCH_USERNAME: elastic
-      ELASTICSEARCH_PASSWORD: changeme
+      ELASTICSEARCH_PASSWORD: "LDV5n*M-HLKf8RrtQGJI"
       ELASTICSEARCH_API_KEY: ""
-      ELASTICSEARCH_INSECURE: "false"
+      ELASTICSEARCH_INSECURE: "true"
     depends_on:
       - postgres
       - redis

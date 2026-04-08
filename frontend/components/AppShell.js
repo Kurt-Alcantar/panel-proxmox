@@ -20,11 +20,17 @@ export default function AppShell({ title, subtitle, children }) {
 
         <div className="navSection">
           <div className="navTitle">Principal</div>
+
           <Link className={`navItem ${isActive('/vms') ? 'active' : ''}`} href="/vms">
             Mis VMs
           </Link>
+
           <Link className={`navItem ${isActive('/audit') ? 'active' : ''}`} href="/audit">
             Auditoría
+          </Link>
+
+          <Link className={`navItem ${isActive('/admin') ? 'active' : ''}`} href="/admin">
+            Administración
           </Link>
         </div>
 

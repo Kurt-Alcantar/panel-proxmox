@@ -1,532 +1,446 @@
-import { Injectable } from '@nestjs/common'
-import { ElasticsearchService } from './elasticsearch.service'
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  UnauthorizedException
+} from '@nestjs/common';
+import { PrismaService } from './prisma.service';
+import { ProxmoxService } from './proxmox.service';
+import { AuthGuard } from './auth.guard';
+import { AuditService } from './audit.service';
+import { getVmMonitoredServices, getVmObservability } from './observability';
+import { ObservabilityNativeService } from './observability-native.service';
 
-@Injectable()
-export class ObservabilityNativeService {
-  constructor(private readonly elastic: ElasticsearchService) {}
+@Controller()
+export class VmController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly proxmox: ProxmoxService,
+    private readonly audit: AuditService,
+    private readonly observabilityNative: ObservabilityNativeService
+  ) {}
 
-  private hostFilter(hostName: string) {
-    const raw = String(hostName || '').trim()
-    const lower = raw.toLowerCase()
+  private serializeVm(vm: any) {
+    return {
+      ...vm,
+      memory: vm.memory !== null ? vm.memory.toString() : null,
+      disk: vm.disk !== null ? vm.disk.toString() : null
+    };
+  }
+
+  private async getUserContext(keycloakId?: string) {
+    if (!keycloakId) return null;
+
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: keycloakId }
+    });
+
+    if (!user) return null;
+
+    const roles = await this.prisma.$queryRaw<Array<{ code: string }>>`
+      SELECT r.code
+      FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = ${user.id}::uuid
+    `;
+
+    const roleCodes = roles.map((row) => row.code);
+    const isPlatformAdmin = roleCodes.includes('platform_admin');
+
+    return { user, roleCodes, isPlatformAdmin };
+  }
+
+  private async getAllowedPoolExternalIds(userContext: any) {
+    if (!userContext?.user) return [];
+    if (userContext.isPlatformAdmin) return null;
+    if (!userContext.user.tenant_group_id) return [];
+
+    const bindings = await this.prisma.tenant_group_pools.findMany({
+      where: { tenant_group_id: userContext.user.tenant_group_id }
+    });
+
+    const poolIds = bindings.map((b) => b.proxmox_pool_id);
+    if (!poolIds.length) return [];
+
+    const pools = await this.prisma.proxmox_pools.findMany({
+      where: { id: { in: poolIds } }
+    });
+
+    return pools.map((p) => p.external_id);
+  }
+
+  private async findAccessibleVm(vmid: number, keycloakId?: string) {
+    const userContext = await this.getUserContext(keycloakId);
+    if (!userContext) return null;
+
+    if (userContext.isPlatformAdmin) {
+      return this.prisma.vm_inventory.findFirst({ where: { vmid } });
+    }
+
+    const poolNames = await this.getAllowedPoolExternalIds(userContext);
+    if (!poolNames?.length) return null;
+
+    return this.prisma.vm_inventory.findFirst({
+      where: {
+        vmid,
+        pool_id: { in: poolNames }
+      }
+    });
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid')
+  async getVmDetail(@Param('vmid') vmid: string, @Req() req: any) {
+    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
+    if (!vm) return null;
 
     return {
-      bool: {
-        should: [
-          { term: { 'host.hostname': raw } },
-          { term: { 'host.name': raw } },
-          { term: { 'host.name': lower } },
-          {
-            wildcard: {
-              'host.hostname': {
-                value: `*${raw}*`,
-                case_insensitive: true
-              }
-            }
-          },
-          {
-            wildcard: {
-              'host.name': {
-                value: `*${raw}*`,
-                case_insensitive: true
-              }
-            }
-          }
-        ],
-        minimum_should_match: 1
-      }
-    }
+      ...this.serializeVm(vm),
+      observability: getVmObservability(vm)
+    };
   }
 
-  private range24h() {
-    return { range: { '@timestamp': { gte: 'now-24h', lte: 'now' } } }
-  }
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/observability/overview')
+  async getVmOverview(@Param('vmid') vmid: string, @Req() req: any) {
+    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
+    if (!vm) return null;
 
-  private rangeCustom(from: string, to: string) {
-    return { range: { '@timestamp': { gte: from, lte: to } } }
-  }
-
-  private async safeSearch(index: string, body: any) {
-    try {
-      return await this.elastic.search(index, body)
-    } catch (error: any) {
-      const message = error?.response?.data || error?.message || 'Elasticsearch error'
-      throw new Error(typeof message === 'string' ? message : JSON.stringify(message))
-    }
-  }
-
-  private num(value: any, digits = 1) {
-    if (value === null || value === undefined || Number.isNaN(Number(value))) return null
-    return Number(Number(value).toFixed(digits))
-  }
-
-  private hitSource(hit: any) {
-    return hit?._source || {}
-  }
-
-  private pick(source: any, path: string) {
-    return path.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : null), source)
-  }
-
-  async getOverview(hostName: string) {
-    const body = {
-      size: 0,
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h()]
-        }
-      },
-      aggs: {
-        cpu_avg: { avg: { field: 'system.cpu.total.norm.pct' } },
-        mem_avg: { avg: { field: 'system.memory.used.pct' } },
-        disk_max: { max: { field: 'system.filesystem.used.pct' } }
-      }
+    const observability = getVmObservability(vm);
+    if (!observability.enabled || !observability.hostName) {
+      return { enabled: false, reason: 'Observabilidad no habilitada para esta VM' };
     }
 
-    const metrics = await this.safeSearch('metrics-*', body)
-
-    const errorBody = {
-      size: 0,
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h()],
-          should: [
-            { terms: { 'log.level': ['error', 'critical', 'fatal'] } }
-          ],
-          minimum_should_match: 1
-        }
-      }
-    }
-
-    const errors = await this.safeSearch('logs-*', errorBody)
-
-    const latestBody = {
-      size: 1,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: { bool: { filter: [this.hostFilter(hostName)] } },
-      _source: ['@timestamp']
-    }
-
-    const latest = await this.safeSearch('metrics-*,logs-*', latestBody)
-    const lastSeen = latest?.hits?.hits?.[0]?._source?.['@timestamp'] || null
-
-    const recentErrorsBody = {
-      size: 10,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: errorBody.query,
-      _source: ['@timestamp', 'host.name', 'service.name', 'process.name', 'log.level', 'message', 'event.dataset', 'data_stream.dataset']
-    }
-
-    const recentErrors = await this.safeSearch('logs-*', recentErrorsBody)
+    const data =
+      observability.osType === 'windows'
+        ? await this.observabilityNative.getOverview(observability.hostName)
+        : {
+            cpuAvgPct: null,
+            memoryUsedPct: null,
+            diskUsedPct: null,
+            errorCount24h: 0,
+            lastSeen: null,
+            recentErrors: []
+          };
 
     return {
-      cpuAvgPct: this.num(metrics?.aggregations?.cpu_avg?.value ? metrics.aggregations.cpu_avg.value * 100 : null),
-      memoryUsedPct: this.num(metrics?.aggregations?.mem_avg?.value ? metrics.aggregations.mem_avg.value * 100 : null),
-      diskUsedPct: this.num(metrics?.aggregations?.disk_max?.value ? metrics.aggregations.disk_max.value * 100 : null),
-      errorCount24h: errors?.hits?.total?.value || 0,
-      lastSeen,
-      recentErrors: (recentErrors?.hits?.hits || []).map((hit: any) => {
-        const src = this.hitSource(hit)
-        return {
-          timestamp: src['@timestamp'],
-          hostName: this.pick(src, 'host.hostname') || this.pick(src, 'host.name'),
-          serviceName: this.pick(src, 'service.name'),
-          processName: this.pick(src, 'process.name'),
-          level: this.pick(src, 'log.level'),
-          dataset: this.pick(src, 'event.dataset') || this.pick(src, 'data_stream.dataset'),
-          message: src.message || '-'
-        }
-      })
-    }
+      enabled: true,
+      hostName: observability.hostName,
+      osType: observability.osType,
+      services: observability.services,
+      kibanaUrl: observability.baseUrl,
+      ...data
+    };
   }
 
-  async getWindowsSecurity(hostName: string) {
-    const summaryBody = {
-      size: 0,
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h(), { term: { 'winlog.channel': 'Security' } }]
-        }
-      },
-      aggs: {
-        by_event: {
-          filters: {
-            filters: {
-              success_logons: {
-                bool: {
-                  filter: [
-                    { term: { 'event.code': '4624' } },
-                    { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }
-                  ]
-                }
-              },
-              failed_logons: { term: { 'event.code': '4625' } },
-              lockouts: { term: { 'event.code': '4740' } },
-              privilege: { terms: { 'event.code': ['4672', '4673', '4674'] } },
-              user_changes: { terms: { 'event.code': ['4720', '4722', '4723', '4724', '4725', '4726'] } },
-              group_changes: { terms: { 'event.code': ['4728', '4729', '4732', '4733', '4756', '4757'] } },
-              rdp: {
-                bool: {
-                  filter: [
-                    { term: { 'event.code': '4624' } },
-                    { term: { 'winlog.event_data.LogonType': '10' } }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        failed_by_user: { terms: { field: 'winlog.event_data.TargetUserName', size: 10 } },
-        failed_by_ip: { terms: { field: 'source.ip', size: 10 } }
-      }
-    }
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/observability/security')
+  async getVmSecurity(@Param('vmid') vmid: string, @Req() req: any) {
+    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
+    if (!vm) return null;
 
-    const summary = await this.safeSearch('logs-*', summaryBody)
-    const buckets = summary?.aggregations?.by_event?.buckets || {}
-
-    const recentSuccessBody = {
-      size: 5,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          filter: [
-            this.hostFilter(hostName),
-            this.range24h(),
-            { term: { 'winlog.channel': 'Security' } },
-            { term: { 'event.code': '4624' } },
-            { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }
-          ]
-        }
-      },
-      _source: ['@timestamp', 'event.code', 'message', 'source.ip', 'winlog.event_data.TargetUserName', 'winlog.event_data.LogonType', 'winlog.event_data.IpAddress']
-    }
-
-    const recentFailedBody = {
-      size: 5,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          filter: [
-            this.hostFilter(hostName),
-            this.range24h(),
-            { term: { 'winlog.channel': 'Security' } },
-            { term: { 'event.code': '4625' } }
-          ]
-        }
-      },
-      _source: ['@timestamp', 'event.code', 'message', 'source.ip', 'winlog.event_data.TargetUserName', 'winlog.event_data.Status', 'winlog.event_data.SubStatus', 'winlog.event_data.IpAddress']
-    }
-
-    const privilegeBody = {
-      size: 5,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          filter: [
-            this.hostFilter(hostName),
-            this.range24h(),
-            { term: { 'winlog.channel': 'Security' } },
-            { terms: { 'event.code': ['4672', '4673', '4674'] } }
-          ]
-        }
-      },
-      _source: ['@timestamp', 'event.code', 'message', 'winlog.event_data.SubjectUserName', 'winlog.event_data.PrivilegeList']
-    }
-
-    const userChangesBody = {
-      size: 5,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          filter: [
-            this.hostFilter(hostName),
-            this.range24h(),
-            { term: { 'winlog.channel': 'Security' } },
-            { terms: { 'event.code': ['4720', '4722', '4723', '4724', '4725', '4726', '4728', '4729', '4732', '4733', '4756', '4757', '4740'] } }
-          ]
-        }
-      },
-      _source: ['@timestamp', 'event.code', 'message', 'winlog.event_data.TargetUserName', 'winlog.event_data.SubjectUserName', 'winlog.event_data.MemberName']
-    }
-
-    const remoteBody = {
-      size: 5,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          should: [
-            {
-              bool: {
-                filter: [
-                  this.hostFilter(hostName),
-                  this.range24h(),
-                  { term: { 'winlog.channel': 'Security' } },
-                  { term: { 'event.code': '4624' } },
-                  { term: { 'winlog.event_data.LogonType': '10' } }
-                ]
-              }
-            },
-            {
-              bool: {
-                filter: [this.hostFilter(hostName), this.range24h()],
-                should: [
-                  { wildcard: { message: '*WinRM*' } },
-                  { wildcard: { message: '*PSRemoting*' } },
-                  { term: { 'process.name': 'wsmprovhost.exe' } },
-                  { terms: { 'process.name': ['powershell.exe', 'pwsh.exe'] } }
-                ],
-                minimum_should_match: 1
-              }
-            }
-          ],
-          minimum_should_match: 1
-        }
-      },
-      _source: ['@timestamp', 'event.code', 'message', 'source.ip', 'process.name', 'winlog.event_data.TargetUserName', 'winlog.event_data.LogonType']
-    }
-
-    const [successRows, failedRows, privilegeRows, userChangeRows, remoteRows] = await Promise.all([
-      this.safeSearch('logs-*', recentSuccessBody),
-      this.safeSearch('logs-*', recentFailedBody),
-      this.safeSearch('logs-*', privilegeBody),
-      this.safeSearch('logs-*', userChangesBody),
-      this.safeSearch('logs-*', remoteBody)
-    ])
-
-    const mapRows = (hits: any[], mapper: (src: any) => any) => (hits || []).map((hit) => mapper(this.hitSource(hit)))
-
-    return {
-      kpis: {
-        successLogons24h: buckets.success_logons?.doc_count || 0,
-        failedLogons24h: buckets.failed_logons?.doc_count || 0,
-        lockouts24h: buckets.lockouts?.doc_count || 0,
-        privilegeEvents24h: buckets.privilege?.doc_count || 0,
-        userChanges24h: buckets.user_changes?.doc_count || 0,
-        groupChanges24h: buckets.group_changes?.doc_count || 0,
-        remoteAccess24h: buckets.rdp?.doc_count || 0
-      },
-      failuresByUser: (summary?.aggregations?.failed_by_user?.buckets || []).map((b: any) => ({ key: b.key, count: b.doc_count })),
-      failuresByIp: (summary?.aggregations?.failed_by_ip?.buckets || []).map((b: any) => ({ key: b.key, count: b.doc_count })),
-      recentSuccess: mapRows(successRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        user: this.pick(src, 'winlog.event_data.TargetUserName'),
-        sourceIp: this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'),
-        logonType: this.pick(src, 'winlog.event_data.LogonType'),
-        message: src.message || '-'
-      })),
-      recentFailed: mapRows(failedRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        user: this.pick(src, 'winlog.event_data.TargetUserName'),
-        sourceIp: this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'),
-        status: this.pick(src, 'winlog.event_data.Status'),
-        subStatus: this.pick(src, 'winlog.event_data.SubStatus'),
-        message: src.message || '-'
-      })),
-      privilegeEvents: mapRows(privilegeRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        eventCode: src.event?.code || this.pick(src, 'event.code'),
-        user: this.pick(src, 'winlog.event_data.SubjectUserName'),
-        privilegeList: this.pick(src, 'winlog.event_data.PrivilegeList'),
-        message: src.message || '-'
-      })),
-      userChanges: mapRows(userChangeRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        eventCode: this.pick(src, 'event.code'),
-        targetUser: this.pick(src, 'winlog.event_data.TargetUserName'),
-        actorUser: this.pick(src, 'winlog.event_data.SubjectUserName'),
-        memberName: this.pick(src, 'winlog.event_data.MemberName'),
-        message: src.message || '-'
-      })),
-      remoteAccess: mapRows(remoteRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        eventCode: this.pick(src, 'event.code'),
-        user: this.pick(src, 'winlog.event_data.TargetUserName'),
-        sourceIp: this.pick(src, 'source.ip'),
-        processName: this.pick(src, 'process.name'),
-        logonType: this.pick(src, 'winlog.event_data.LogonType'),
-        message: src.message || '-'
-      }))
-    }
-  }
-
-  async getWindowsSecurityExport(hostName: string, from: string, to: string) {
-    const rangeFilter = this.rangeCustom(from, to)
-    const baseFilter = [this.hostFilter(hostName), rangeFilter, { term: { 'winlog.channel': 'Security' } }]
-
-    const summaryBody = {
-      size: 0,
-      query: { bool: { filter: baseFilter } },
-      aggs: {
-        by_event: {
-          filters: {
-            filters: {
-              success_logons: { bool: { filter: [{ term: { 'event.code': '4624' } }, { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }] } },
-              failed_logons: { term: { 'event.code': '4625' } },
-              lockouts: { term: { 'event.code': '4740' } },
-              privilege: { terms: { 'event.code': ['4672', '4673', '4674'] } },
-              user_changes: { terms: { 'event.code': ['4720', '4722', '4723', '4724', '4725', '4726'] } },
-              group_changes: { terms: { 'event.code': ['4728', '4729', '4732', '4733', '4756', '4757'] } },
-              rdp: { bool: { filter: [{ term: { 'event.code': '4624' } }, { term: { 'winlog.event_data.LogonType': '10' } }] } }
-            }
-          }
-        },
-        failed_by_user: { terms: { field: 'winlog.event_data.TargetUserName', size: 20 } },
-        failed_by_ip: { terms: { field: 'source.ip', size: 20 } }
-      }
-    }
-
-    const mkBody = (extraFilter: any[], size = 1000) => ({
-      size,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: { bool: { filter: [...baseFilter, ...extraFilter] } },
-      _source: ['@timestamp', 'event.code', 'message', 'source.ip', 'process.name',
-        'winlog.event_data.TargetUserName', 'winlog.event_data.LogonType',
-        'winlog.event_data.IpAddress', 'winlog.event_data.Status', 'winlog.event_data.SubStatus',
-        'winlog.event_data.SubjectUserName', 'winlog.event_data.PrivilegeList',
-        'winlog.event_data.MemberName']
-    })
-
-    const [summary, successRows, failedRows, privilegeRows, userChangeRows, remoteRows] = await Promise.all([
-      this.safeSearch('logs-*', summaryBody),
-      this.safeSearch('logs-*', mkBody([{ term: { 'event.code': '4624' } }, { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }])),
-      this.safeSearch('logs-*', mkBody([{ term: { 'event.code': '4625' } }])),
-      this.safeSearch('logs-*', mkBody([{ terms: { 'event.code': ['4672', '4673', '4674'] } }])),
-      this.safeSearch('logs-*', mkBody([{ terms: { 'event.code': ['4720', '4722', '4723', '4724', '4725', '4726', '4728', '4729', '4732', '4733', '4756', '4757', '4740'] } }])),
-      this.safeSearch('logs-*', mkBody([{ term: { 'event.code': '4624' } }, { term: { 'winlog.event_data.LogonType': '10' } }]))
-    ])
-
-    const buckets = summary?.aggregations?.by_event?.buckets || {}
-    const mapRows = (hits: any[], mapper: (src: any) => any) => (hits || []).map((hit) => mapper(this.hitSource(hit)))
-
-    return {
-      from,
-      to,
-      hostName,
-      kpis: {
-        successLogons: buckets.success_logons?.doc_count || 0,
-        failedLogons: buckets.failed_logons?.doc_count || 0,
-        lockouts: buckets.lockouts?.doc_count || 0,
-        privilegeEvents: buckets.privilege?.doc_count || 0,
-        userChanges: buckets.user_changes?.doc_count || 0,
-        groupChanges: buckets.group_changes?.doc_count || 0,
-        remoteAccess: buckets.rdp?.doc_count || 0
-      },
-      failuresByUser: (summary?.aggregations?.failed_by_user?.buckets || []).map((b: any) => ({ key: b.key, count: b.doc_count })),
-      failuresByIp: (summary?.aggregations?.failed_by_ip?.buckets || []).map((b: any) => ({ key: b.key, count: b.doc_count })),
-      recentSuccess: mapRows(successRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        user: this.pick(src, 'winlog.event_data.TargetUserName'),
-        sourceIp: this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'),
-        logonType: this.pick(src, 'winlog.event_data.LogonType'),
-        message: src.message || '-'
-      })),
-      recentFailed: mapRows(failedRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        user: this.pick(src, 'winlog.event_data.TargetUserName'),
-        sourceIp: this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'),
-        status: this.pick(src, 'winlog.event_data.Status'),
-        subStatus: this.pick(src, 'winlog.event_data.SubStatus'),
-        message: src.message || '-'
-      })),
-      privilegeEvents: mapRows(privilegeRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        eventCode: this.pick(src, 'event.code'),
-        user: this.pick(src, 'winlog.event_data.SubjectUserName'),
-        privilegeList: this.pick(src, 'winlog.event_data.PrivilegeList'),
-        message: src.message || '-'
-      })),
-      userChanges: mapRows(userChangeRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        eventCode: this.pick(src, 'event.code'),
-        targetUser: this.pick(src, 'winlog.event_data.TargetUserName'),
-        actorUser: this.pick(src, 'winlog.event_data.SubjectUserName'),
-        memberName: this.pick(src, 'winlog.event_data.MemberName'),
-        message: src.message || '-'
-      })),
-      remoteAccess: mapRows(remoteRows?.hits?.hits, (src) => ({
-        timestamp: src['@timestamp'],
-        eventCode: this.pick(src, 'event.code'),
-        user: this.pick(src, 'winlog.event_data.TargetUserName'),
-        sourceIp: this.pick(src, 'source.ip'),
-        processName: this.pick(src, 'process.name'),
-        logonType: this.pick(src, 'winlog.event_data.LogonType'),
-        message: src.message || '-'
-      }))
-    }
-  }
-
-  async getWindowsServices(hostName: string, monitoredServices: string[]) {
-    const body = {
-      size: 200,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h()],
-          should: [
-            { exists: { field: 'windows.service.name' } },
-            { exists: { field: 'windows.service.display_name' } }
-          ],
-          minimum_should_match: 1
-        }
-      },
-      _source: ['@timestamp', 'windows.service.name', 'windows.service.display_name', 'windows.service.state', 'message']
-    }
-
-    const res = await this.safeSearch('metrics-*,logs-*', body)
-    const configured = monitoredServices.map((item) => item.toLowerCase())
-    const latestByName = new Map<string, any>()
-
-    for (const hit of res?.hits?.hits || []) {
-      const src = this.hitSource(hit)
-      const rawName = this.pick(src, 'windows.service.display_name') || this.pick(src, 'windows.service.name')
-      const state = this.pick(src, 'windows.service.state')
-      if (!rawName) continue
-      const serviceName = String(rawName)
-      const normalized = serviceName.toLowerCase()
-      const matches = !configured.length || configured.some((cfg) => normalized.includes(cfg))
-      if (!matches) continue
-      if (!latestByName.has(serviceName)) {
-        latestByName.set(serviceName, {
-          timestamp: src['@timestamp'],
-          serviceName,
-          state: state || 'unknown',
-          message: src.message || '-'
-        })
-      }
-    }
-
-    const rows = Array.from(latestByName.values())
-    return {
-      rows,
-      missingConfiguredServices: monitoredServices.filter((cfg) => !rows.some((row) => row.serviceName.toLowerCase().includes(cfg.toLowerCase())))
-    }
-  }
-
-  async getWindowsEvents(hostName: string) {
-    const body = {
-      size: 100,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h()]
-        }
-      },
-      _source: ['@timestamp', 'winlog.channel', 'event.code', 'event.action', 'log.level', 'message', 'process.name', 'service.name', 'source.ip']
-    }
-
-    const res = await this.safeSearch('logs-*', body)
-    return (res?.hits?.hits || []).map((hit: any) => {
-      const src = this.hitSource(hit)
+    const observability = getVmObservability(vm);
+    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
       return {
-        timestamp: src['@timestamp'],
-        channel: this.pick(src, 'winlog.channel'),
-        eventCode: this.pick(src, 'event.code'),
-        action: this.pick(src, 'event.action'),
-        level: this.pick(src, 'log.level'),
-        processName: this.pick(src, 'process.name'),
-        serviceName: this.pick(src, 'service.name'),
-        sourceIp: this.pick(src, 'source.ip'),
-        message: src.message || '-'
-      }
-    })
+        enabled: false,
+        reason: 'Dashboard nativo de seguridad disponible solo para Windows por ahora.'
+      };
+    }
+
+    return {
+      enabled: true,
+      ...(await this.observabilityNative.getWindowsSecurity(observability.hostName))
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/observability/security/export')
+  async exportVmSecurity(
+    @Param('vmid') vmid: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Req() req: any
+  ) {
+    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
+    if (!vm) return null;
+
+    const observability = getVmObservability(vm);
+    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
+      return { enabled: false, reason: 'No disponible para esta VM.' };
+    }
+
+    const fromDate = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const toDate = to || new Date().toISOString();
+
+    return {
+      enabled: true,
+      vmName: vm.name,
+      ...(await this.observabilityNative.getWindowsSecurityExport(observability.hostName, fromDate, toDate))
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/observability/services')
+  async getVmServices(@Param('vmid') vmid: string, @Req() req: any) {
+    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
+    if (!vm) return null;
+
+    const observability = getVmObservability(vm);
+    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
+      return {
+        enabled: false,
+        reason: 'Panel nativo de servicios disponible solo para Windows por ahora.'
+      };
+    }
+
+    return {
+      enabled: true,
+      ...(await this.observabilityNative.getWindowsServices(
+        observability.hostName,
+        getVmMonitoredServices(vm)
+      ))
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/observability/events')
+  async getVmEvents(@Param('vmid') vmid: string, @Req() req: any) {
+    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
+    if (!vm) return null;
+
+    const observability = getVmObservability(vm);
+    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
+      return { enabled: false, rows: [] };
+    }
+
+    return {
+      enabled: true,
+      rows: await this.observabilityNative.getWindowsEvents(observability.hostName)
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('vms')
+  async list() {
+    const vms = await this.prisma.vm_inventory.findMany({
+      orderBy: { vmid: 'asc' }
+    });
+
+    return vms.map((vm) => this.serializeVm(vm));
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('tenant-groups/:code/vms')
+  async listByTenantGroup(@Param('code') code: string) {
+    const tenantGroup = await this.prisma.tenant_groups.findFirst({
+      where: { code }
+    });
+
+    if (!tenantGroup) return [];
+
+    const bindings = await this.prisma.tenant_group_pools.findMany({
+      where: { tenant_group_id: tenantGroup.id }
+    });
+
+    const proxmoxPoolIds = bindings.map((b) => b.proxmox_pool_id);
+    if (!proxmoxPoolIds.length) return [];
+
+    const pools = await this.prisma.proxmox_pools.findMany({
+      where: { id: { in: proxmoxPoolIds } }
+    });
+    const poolNames = pools.map((p) => p.external_id);
+
+    const vms = await this.prisma.vm_inventory.findMany({
+      where: { pool_id: { in: poolNames } },
+      orderBy: { vmid: 'asc' }
+    });
+
+    return vms.map((vm) => this.serializeVm(vm));
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('my/vms')
+  async myVMs(@Req() req: any) {
+    const userContext = await this.getUserContext(req.user?.sub);
+
+    if (!userContext?.user) {
+      throw new UnauthorizedException('Usuario no encontrado');
+    }
+
+    if (userContext.isPlatformAdmin) {
+      const vms = await this.prisma.vm_inventory.findMany({
+        orderBy: { vmid: 'asc' }
+      });
+
+      return vms.map((vm) => this.serializeVm(vm));
+    }
+
+    const poolNames = await this.getAllowedPoolExternalIds(userContext);
+    if (!poolNames?.length) return [];
+
+    const vms = await this.prisma.vm_inventory.findMany({
+      where: { pool_id: { in: poolNames } },
+      orderBy: { vmid: 'asc' }
+    });
+
+    return vms.map((vm) => this.serializeVm(vm));
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/sync')
+  async syncVMs() {
+    const vms = await this.proxmox.getAllVMs();
+
+    for (const vm of vms) {
+      await this.prisma.vm_inventory.upsert({
+        where: { vmid: vm.vmid },
+        update: {
+          name: vm.name ?? null,
+          node: vm.node ?? null,
+          pool_id: vm.pool_id ?? null,
+          status: vm.status ?? null,
+          cpu: vm.cpu ?? null,
+          memory: vm.memory !== null && vm.memory !== undefined ? BigInt(vm.memory) : null,
+          disk: vm.disk !== null && vm.disk !== undefined ? BigInt(vm.disk) : null
+        },
+        create: {
+          vmid: vm.vmid,
+          name: vm.name ?? null,
+          node: vm.node ?? null,
+          pool_id: vm.pool_id ?? null,
+          status: vm.status ?? null,
+          cpu: vm.cpu ?? null,
+          memory: vm.memory !== null && vm.memory !== undefined ? BigInt(vm.memory) : null,
+          disk: vm.disk !== null && vm.disk !== undefined ? BigInt(vm.disk) : null
+        }
+      });
+    }
+
+    return { synced: vms.length };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('pools')
+  async listPools() {
+    return this.prisma.proxmox_pools.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('pools/sync')
+  async syncPools() {
+    const pools = await this.proxmox.getPools();
+
+    for (const pool of pools) {
+      await this.prisma.proxmox_pools.upsert({
+        where: { external_id: pool.poolid },
+        update: { name: pool.poolid },
+        create: { external_id: pool.poolid, name: pool.poolid }
+      });
+    }
+
+    return { synced: pools.length };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/start')
+  async startVM(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
+    await this.proxmox.startVM(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.start',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
+
+    return { status: 'started', vmid: Number(vmid) };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/stop')
+  async stopVM(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
+    await this.proxmox.stopVM(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.stop',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
+
+    return { status: 'stopped', vmid: Number(vmid) };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/restart')
+  async restartVM(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
+    await this.proxmox.restartVM(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.restart',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
+
+    return { status: 'restarted', vmid: Number(vmid) };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('vms/:vmid/console')
+  async openConsole(@Param('vmid') vmid: string, @Req() req: any) {
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: req.user?.sub }
+    });
+
+    const consoleData = await this.proxmox.getVmConsole(Number(vmid));
+
+    await this.audit.log({
+      userId: user?.id ?? null,
+      action: 'vm.console.open',
+      target: `vm:${vmid}`,
+      result: 'success'
+    });
+
+    return {
+      vmid: Number(vmid),
+      ...consoleData,
+      url: `https://192.168.10.20:8006/?console=kvm&novnc=1&vmid=${vmid}&node=hyperprox&resize=scale`
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/audit')
+  async getVmAudit(@Param('vmid') vmid: string) {
+    return this.prisma.audit_logs.findMany({
+      where: { target: `vm:${vmid}` },
+      orderBy: { created_at: 'desc' },
+      take: 100
+    });
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('audit')
+  async listAudit() {
+    return this.prisma.audit_logs.findMany({
+      orderBy: { created_at: 'desc' },
+      take: 100
+    });
   }
 }

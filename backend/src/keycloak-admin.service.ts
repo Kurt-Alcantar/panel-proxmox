@@ -17,7 +17,7 @@ export class KeycloakAdminService {
   private readonly realm = process.env.KEYCLOAK_REALM || 'master';
   private readonly clientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
   private readonly username = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || 'admin';
-  private readonly password = process.env.KEYCLOAK_ADMIN_PASSWORD || 'admin';
+  private readonly password = process.env.KEYCLOAK_ADMIN_PASSWORD || 'admin1234';
 
   private async getAdminAccessToken() {
     const params = new URLSearchParams();

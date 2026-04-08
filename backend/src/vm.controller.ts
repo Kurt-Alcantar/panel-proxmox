@@ -117,6 +117,16 @@ export class VmController {
 
     const data = await this.observabilityNative.getOverview(observability.hostName);
 
+    return {
+      enabled: true,
+      hostName: observability.hostName,
+      osType: observability.osType,
+      services: observability.services,
+      kibanaUrl: observability.baseUrl,
+      ...data
+    };
+  }
+
   @UseGuards(AuthGuard)
   @Get('vms/:vmid/observability/security')
   async getVmSecurity(@Param('vmid') vmid: string, @Req() req: any) {

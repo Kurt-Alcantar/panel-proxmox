@@ -482,7 +482,7 @@ export default function AdminPage() {
                     <tr key={user.id} style={{ borderTop: '1px solid #e5e7eb' }}>
                       <td style={{ padding: '10px 8px' }}>
                         <div style={{ fontWeight: 600 }}>{user.email}</div>
-                        <div style={{ color: '#6001f8', fontSize: 12 }}>{user.keycloak_id}</div>
+                        <div style={{ color: '#736b80', fontSize: 12 }}>{user.keycloak_id}</div>
                       </td>
                       <td style={{ padding: '10px 8px' }}>
                         {user.tenant_group ? `${user.tenant_group.name} (${user.tenant_group.code})` : 'Sin asignar'}

@@ -306,10 +306,8 @@ export default function AdminPage() {
   }
 
   return (
-    <AppShell
-      title="Administración"
-      subtitle="Alta de usuarios, tenant groups, asignación de pools y mantenimiento del inventario VM."
-    >
+   
+
       <div style={{ display: 'grid', gap: 18 }}>
         {(error || success) && (
           <div
@@ -594,6 +592,6 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+   
   )
 }

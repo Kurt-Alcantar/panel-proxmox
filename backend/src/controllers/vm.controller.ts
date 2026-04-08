@@ -8,12 +8,12 @@ import {
   UseGuards,
   UnauthorizedException
 } from '@nestjs/common';
-import { PrismaService } from './prisma.service';
-import { ProxmoxService } from './proxmox.service';
-import { AuthGuard } from './auth.guard';
-import { AuditService } from './audit.service';
-import { getVmMonitoredServices, getVmObservability } from './observability';
-import { ObservabilityNativeService } from './observability-native.service';
+import { PrismaService } from '../services/prisma.service';
+import { ProxmoxService } from '../services/proxmox.service';
+import { AuthGuard } from '../guards/auth.guard';
+import { AuditService } from '../services/audit.service';
+import { getVmMonitoredServices, getVmObservability } from '../observability';
+import { ObservabilityNativeService } from '../services/observability-native.service';
 
 @Controller()
 export class VmController {

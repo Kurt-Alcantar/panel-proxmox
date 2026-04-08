@@ -12,11 +12,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { AuthGuard } from './auth.guard';
-import { AuditService } from './audit.service';
-import { KeycloakAdminService } from './keycloak-admin.service';
-import { PrismaService } from './prisma.service';
-import { ProxmoxService } from './proxmox.service';
+import { AuthGuard } from '../guards/auth.guard';
+import { AuditService } from '../services/audit.service';
+import { KeycloakAdminService } from '../services/keycloak-admin.service';
+import { PrismaService } from '../services/prisma.service';
+import { ProxmoxService } from '../services/proxmox.service';
 
 interface AuthenticatedRequest {
   user?: {

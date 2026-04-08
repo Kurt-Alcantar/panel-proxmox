@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { AdminController } from './admin.controller';
-import { AuditService } from './audit.service';
-import { AuthController } from './auth.controller';
-import { ElasticsearchService } from './elasticsearch.service';
-import { KeycloakAdminService } from './keycloak-admin.service';
-import { ObservabilityNativeService } from './observability-native.service';
-import { PrismaService } from './prisma.service';
-import { ProxmoxService } from './proxmox.service';
-import { VmController } from './vm.controller';
+import { AdminController } from './controllers/admin.controller';
+import { AuditService } from './services/audit.service';
+import { AuthController } from './controllers/auth.controller';
+import { ElasticsearchService } from './services/elasticsearch.service';
+import { KeycloakAdminService } from './services/keycloak-admin.service';
+import { ObservabilityNativeService } from './services/observability-native.service';
+import { PrismaService } from './services/prisma.service';
+import { ProxmoxService } from './services/proxmox.service';
+import { VmController } from './controllers/vm.controller';
 
 @Module({
   controllers: [VmController, AuthController, AdminController],

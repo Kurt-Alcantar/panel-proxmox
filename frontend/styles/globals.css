@@ -1368,3 +1368,26 @@ input {
     align-items: flex-start;
   }
 }
+.portal-top-actions {
+  margin-top: 14px;
+  margin-bottom: 12px;
+}
+
+.portal-admin-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  color: #fff;
+  background: #1f2a44;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.portal-admin-button:hover {
+  background: #2a3b61;
+  transform: translateY(-1px);
+}

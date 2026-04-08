@@ -178,7 +178,11 @@ export default function VmsPage() {
           </div>
         </div>
 
-
+        <div className="portal-top-actions">
+          <Link href="/admin" className="portal-admin-button">
+            Administración
+          </Link>
+        </div>
         <div className="portal-divider" />
 
         <div className="sidebar-section-title">Pools</div>
@@ -202,10 +206,6 @@ export default function VmsPage() {
             <span className="pool-count">{items.length}</span>
           </button>
         ))}
-
-        <Link className={`navItem ${isActive('/admin') ? 'active' : ''}`} href="/admin">
-            Administración
-        </Link>
 
         <div className="sidebar-spacer" />
 

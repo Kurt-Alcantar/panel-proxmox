@@ -36,8 +36,13 @@ export class ObservabilityNativeService {
       }
     }
   }
+
   private range24h() {
     return { range: { '@timestamp': { gte: 'now-24h', lte: 'now' } } }
+  }
+
+  private rangeCustom(from: string, to: string) {
+    return { range: { '@timestamp': { gte: from, lte: to } } }
   }
 
   private async safeSearch(index: string, body: any) {
@@ -85,7 +90,6 @@ export class ObservabilityNativeService {
         bool: {
           filter: [this.hostFilter(hostName), this.range24h()],
           should: [
-            { terms: { 'log.level': ['error', 'critical', 'fatal'] } },
             { terms: { 'log.level': ['error', 'critical', 'fatal'] } }
           ],
           minimum_should_match: 1
@@ -180,7 +184,7 @@ export class ObservabilityNativeService {
     const buckets = summary?.aggregations?.by_event?.buckets || {}
 
     const recentSuccessBody = {
-      size: 20,
+      size: 5,
       sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
@@ -193,19 +197,11 @@ export class ObservabilityNativeService {
           ]
         }
       },
-      _source: [
-        '@timestamp',
-        'event.code',
-        'message',
-        'source.ip',
-        'winlog.event_data.TargetUserName',
-        'winlog.event_data.LogonType',
-        'winlog.event_data.IpAddress'
-      ]
+      _source: ['@timestamp', 'event.code', 'message', 'source.ip', 'winlog.event_data.TargetUserName', 'winlog.event_data.LogonType', 'winlog.event_data.IpAddress']
     }
 
     const recentFailedBody = {
-      size: 20,
+      size: 5,
       sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
@@ -217,20 +213,11 @@ export class ObservabilityNativeService {
           ]
         }
       },
-      _source: [
-        '@timestamp',
-        'event.code',
-        'message',
-        'source.ip',
-        'winlog.event_data.TargetUserName',
-        'winlog.event_data.Status',
-        'winlog.event_data.SubStatus',
-        'winlog.event_data.IpAddress'
-      ]
+      _source: ['@timestamp', 'event.code', 'message', 'source.ip', 'winlog.event_data.TargetUserName', 'winlog.event_data.Status', 'winlog.event_data.SubStatus', 'winlog.event_data.IpAddress']
     }
 
     const privilegeBody = {
-      size: 20,
+      size: 5,
       sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
@@ -246,7 +233,7 @@ export class ObservabilityNativeService {
     }
 
     const userChangesBody = {
-      size: 20,
+      size: 5,
       sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
@@ -262,7 +249,7 @@ export class ObservabilityNativeService {
     }
 
     const remoteBody = {
-      size: 20,
+      size: 5,
       sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
@@ -336,7 +323,113 @@ export class ObservabilityNativeService {
       })),
       privilegeEvents: mapRows(privilegeRows?.hits?.hits, (src) => ({
         timestamp: src['@timestamp'],
-        eventCode: src.event?.code || src.event?.code?.toString?.() || this.pick(src, 'event.code'),
+        eventCode: src.event?.code || this.pick(src, 'event.code'),
+        user: this.pick(src, 'winlog.event_data.SubjectUserName'),
+        privilegeList: this.pick(src, 'winlog.event_data.PrivilegeList'),
+        message: src.message || '-'
+      })),
+      userChanges: mapRows(userChangeRows?.hits?.hits, (src) => ({
+        timestamp: src['@timestamp'],
+        eventCode: this.pick(src, 'event.code'),
+        targetUser: this.pick(src, 'winlog.event_data.TargetUserName'),
+        actorUser: this.pick(src, 'winlog.event_data.SubjectUserName'),
+        memberName: this.pick(src, 'winlog.event_data.MemberName'),
+        message: src.message || '-'
+      })),
+      remoteAccess: mapRows(remoteRows?.hits?.hits, (src) => ({
+        timestamp: src['@timestamp'],
+        eventCode: this.pick(src, 'event.code'),
+        user: this.pick(src, 'winlog.event_data.TargetUserName'),
+        sourceIp: this.pick(src, 'source.ip'),
+        processName: this.pick(src, 'process.name'),
+        logonType: this.pick(src, 'winlog.event_data.LogonType'),
+        message: src.message || '-'
+      }))
+    }
+  }
+
+  async getWindowsSecurityExport(hostName: string, from: string, to: string) {
+    const rangeFilter = this.rangeCustom(from, to)
+    const baseFilter = [this.hostFilter(hostName), rangeFilter, { term: { 'winlog.channel': 'Security' } }]
+
+    const summaryBody = {
+      size: 0,
+      query: { bool: { filter: baseFilter } },
+      aggs: {
+        by_event: {
+          filters: {
+            filters: {
+              success_logons: { bool: { filter: [{ term: { 'event.code': '4624' } }, { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }] } },
+              failed_logons: { term: { 'event.code': '4625' } },
+              lockouts: { term: { 'event.code': '4740' } },
+              privilege: { terms: { 'event.code': ['4672', '4673', '4674'] } },
+              user_changes: { terms: { 'event.code': ['4720', '4722', '4723', '4724', '4725', '4726'] } },
+              group_changes: { terms: { 'event.code': ['4728', '4729', '4732', '4733', '4756', '4757'] } },
+              rdp: { bool: { filter: [{ term: { 'event.code': '4624' } }, { term: { 'winlog.event_data.LogonType': '10' } }] } }
+            }
+          }
+        },
+        failed_by_user: { terms: { field: 'winlog.event_data.TargetUserName', size: 20 } },
+        failed_by_ip: { terms: { field: 'source.ip', size: 20 } }
+      }
+    }
+
+    const mkBody = (extraFilter: any[], size = 1000) => ({
+      size,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: { bool: { filter: [...baseFilter, ...extraFilter] } },
+      _source: ['@timestamp', 'event.code', 'message', 'source.ip', 'process.name',
+        'winlog.event_data.TargetUserName', 'winlog.event_data.LogonType',
+        'winlog.event_data.IpAddress', 'winlog.event_data.Status', 'winlog.event_data.SubStatus',
+        'winlog.event_data.SubjectUserName', 'winlog.event_data.PrivilegeList',
+        'winlog.event_data.MemberName']
+    })
+
+    const [summary, successRows, failedRows, privilegeRows, userChangeRows, remoteRows] = await Promise.all([
+      this.safeSearch('logs-*', summaryBody),
+      this.safeSearch('logs-*', mkBody([{ term: { 'event.code': '4624' } }, { terms: { 'winlog.event_data.LogonType': ['2', '10'] } }])),
+      this.safeSearch('logs-*', mkBody([{ term: { 'event.code': '4625' } }])),
+      this.safeSearch('logs-*', mkBody([{ terms: { 'event.code': ['4672', '4673', '4674'] } }])),
+      this.safeSearch('logs-*', mkBody([{ terms: { 'event.code': ['4720', '4722', '4723', '4724', '4725', '4726', '4728', '4729', '4732', '4733', '4756', '4757', '4740'] } }])),
+      this.safeSearch('logs-*', mkBody([{ term: { 'event.code': '4624' } }, { term: { 'winlog.event_data.LogonType': '10' } }]))
+    ])
+
+    const buckets = summary?.aggregations?.by_event?.buckets || {}
+    const mapRows = (hits: any[], mapper: (src: any) => any) => (hits || []).map((hit) => mapper(this.hitSource(hit)))
+
+    return {
+      from,
+      to,
+      hostName,
+      kpis: {
+        successLogons: buckets.success_logons?.doc_count || 0,
+        failedLogons: buckets.failed_logons?.doc_count || 0,
+        lockouts: buckets.lockouts?.doc_count || 0,
+        privilegeEvents: buckets.privilege?.doc_count || 0,
+        userChanges: buckets.user_changes?.doc_count || 0,
+        groupChanges: buckets.group_changes?.doc_count || 0,
+        remoteAccess: buckets.rdp?.doc_count || 0
+      },
+      failuresByUser: (summary?.aggregations?.failed_by_user?.buckets || []).map((b: any) => ({ key: b.key, count: b.doc_count })),
+      failuresByIp: (summary?.aggregations?.failed_by_ip?.buckets || []).map((b: any) => ({ key: b.key, count: b.doc_count })),
+      recentSuccess: mapRows(successRows?.hits?.hits, (src) => ({
+        timestamp: src['@timestamp'],
+        user: this.pick(src, 'winlog.event_data.TargetUserName'),
+        sourceIp: this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'),
+        logonType: this.pick(src, 'winlog.event_data.LogonType'),
+        message: src.message || '-'
+      })),
+      recentFailed: mapRows(failedRows?.hits?.hits, (src) => ({
+        timestamp: src['@timestamp'],
+        user: this.pick(src, 'winlog.event_data.TargetUserName'),
+        sourceIp: this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'),
+        status: this.pick(src, 'winlog.event_data.Status'),
+        subStatus: this.pick(src, 'winlog.event_data.SubStatus'),
+        message: src.message || '-'
+      })),
+      privilegeEvents: mapRows(privilegeRows?.hits?.hits, (src) => ({
+        timestamp: src['@timestamp'],
+        eventCode: this.pick(src, 'event.code'),
         user: this.pick(src, 'winlog.event_data.SubjectUserName'),
         privilegeList: this.pick(src, 'winlog.event_data.PrivilegeList'),
         message: src.message || '-'
@@ -417,17 +510,7 @@ export class ObservabilityNativeService {
           filter: [this.hostFilter(hostName), this.range24h()]
         }
       },
-      _source: [
-        '@timestamp',
-        'winlog.channel',
-        'event.code',
-        'event.action',
-        'log.level',
-        'message',
-        'process.name',
-        'service.name',
-        'source.ip'
-      ]
+      _source: ['@timestamp', 'winlog.channel', 'event.code', 'event.action', 'log.level', 'message', 'process.name', 'service.name', 'source.ip']
     }
 
     const res = await this.safeSearch('logs-*', body)

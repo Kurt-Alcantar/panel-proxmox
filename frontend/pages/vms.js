@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
-
+import Link from 'next/link'
 export default function VmsPage() {
   const router = useRouter()
   const [vms, setVms] = useState([])

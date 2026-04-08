@@ -203,6 +203,10 @@ export default function VmsPage() {
           </button>
         ))}
 
+        <Link className={`navItem ${isActive('/admin') ? 'active' : ''}`} href="/admin">
+            Administración
+        </Link>
+
         <div className="sidebar-spacer" />
 
         <button className="portal-logout" onClick={logout}>

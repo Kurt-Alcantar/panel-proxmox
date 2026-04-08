@@ -115,27 +115,7 @@ export class VmController {
       return { enabled: false, reason: 'Observabilidad no habilitada para esta VM' };
     }
 
-    const data =
-      observability.osType === 'windows'
-        ? await this.observabilityNative.getOverview(observability.hostName)
-        : {
-            cpuAvgPct: null,
-            memoryUsedPct: null,
-            diskUsedPct: null,
-            errorCount24h: 0,
-            lastSeen: null,
-            recentErrors: []
-          };
-
-    return {
-      enabled: true,
-      hostName: observability.hostName,
-      osType: observability.osType,
-      services: observability.services,
-      kibanaUrl: observability.baseUrl,
-      ...data
-    };
-  }
+    const data = await this.observabilityNative.getOverview(observability.hostName);
 
   @UseGuards(AuthGuard)
   @Get('vms/:vmid/observability/security')

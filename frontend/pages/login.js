@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 
@@ -42,41 +43,86 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="loginWrap">
-      <div className="card loginCard">
-        <h1 className="loginTitle">Hyperox Panel</h1>
-        <p className="loginSubtitle">Accede a tu entorno Proxmox multitenant.</p>
-
-        <form onSubmit={handleLogin}>
-          <div className="formGroup">
-            <label>Usuario</label>
-            <input
-              className="input"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
+    <div className="authPage">
+      <header className="authHeader">
+        <div className="authHeaderInner">
+          <div className="authBrand">
+            <img src="/logo.png" alt="Logo Hyper-Ox" className="authBrandLogo" />
           </div>
 
-          <div className="formGroup">
-            <label>Password</label>
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <div className="authHeaderActions">
+            <Link href="/support" className="btn btnSecondary authSupportBtn">
+              Soporte técnico
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="authMain">
+        <section className="authFrame">
+          <div className="authPanel">
+            <div className="authHero">
+              <h1>Bienvenido a HYPER-OX</h1>
+              <p>Tu consola segura te espera. Ingresa tus credenciales para continuar.</p>
+            </div>
+
+            <form className="authForm" onSubmit={handleLogin}>
+              <div className="authField">
+                <label>Usuario</label>
+                <input
+                  className="authInput"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Ingresa tu usuario"
+                  required
+                />
+              </div>
+
+              <div className="authField">
+                <label>Password</label>
+                <input
+                  className="authInput"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Ingresa tu contraseña"
+                  required
+                />
+              </div>
+
+              {error && <div className="errorBox">{error}</div>}
+
+              <div className="authSubmitRow">
+                <button className="btn btnPrimary authSubmitBtn" type="submit" disabled={loading}>
+                  {loading ? 'Entrando...' : 'Validar e iniciar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+
+      <footer className="authFooter">
+        <div className="authFooterInner">
+          <div className="authFooterSide authFooterLeft">
+            <div className="authFooterBrand">
+              <img src="/logo.png" alt="Logo Hyper-Ox" className="authFooterLogo" />
+            </div>
           </div>
 
-          {error && <div className="errorBox">{error}</div>}
+          <div className="authFooterCenter">
+            <div className="authFooterText">
+              Copyright © Hyper-Ox 2026 | Todos los Derechos Reservados
+            </div>
+          </div>
 
-          <button className="btn btnPrimary" type="submit" disabled={loading} style={{ width: '100%' }}>
-            {loading ? 'Entrando...' : 'Iniciar sesión'}
-          </button>
-        </form>
-      </div>
+          <div className="authFooterSide authFooterRight">
+            <div className="authFooterActions">
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }

@@ -54,8 +54,8 @@ services:
       - postgres
       - redis
       - keycloak
-    ports:
-      - "3000:3000"
+    # ports:
+    #   - "3000:3000"
 
   frontend:
     build: ./frontend
@@ -63,8 +63,8 @@ services:
     restart: always
     environment:
       NEXT_PUBLIC_API_URL: http://localhost/api
-    #ports:
-     # - "3001:3000"
+    ports:
+      - "3001:3000"
 
   nginx:
     image: nginx:latest

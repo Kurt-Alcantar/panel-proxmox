@@ -3,50 +3,58 @@ import { useRouter } from 'next/router'
 import AppShell from '../components/AppShell'
 
 const cardStyle = {
-  background: '#fff',
-  borderRadius: 14,
+  background: 'rgba(23, 17, 41, 0.92)',
+  borderRadius: 16,
   padding: 18,
-  boxShadow: '0 8px 26px rgba(15,23,42,0.08)',
-  border: '1px solid #e5e7eb',
+  boxShadow: 'var(--shadow)',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
 }
 
 const inputStyle = {
   width: '100%',
-  border: '1px solid #d1d5db',
-  borderRadius: 10,
+  border: '1px solid var(--border)',
+  borderRadius: 12,
   padding: '10px 12px',
   fontSize: 14,
-  background: '#fff',
+  background: 'var(--panel-2)',
+  color: 'var(--text)',
+  outline: 'none',
 }
 
 const labelStyle = {
   display: 'grid',
   gap: 6,
   fontSize: 13,
-  color: '#374151',
+  color: 'var(--muted)',
 }
 
 const buttonStyle = {
-  border: 'none',
+  border: '1px solid rgba(139, 92, 246, 0.22)',
   borderRadius: 10,
   padding: '10px 14px',
-  background: '#111827',
+  background: 'var(--primary)',
   color: '#fff',
   cursor: 'pointer',
-  fontWeight: 600,
+  fontWeight: 700,
 }
 
 const ghostButtonStyle = {
   ...buttonStyle,
-  background: '#e5e7eb',
-  color: '#111827',
+  background: 'transparent',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
 }
 
 function SectionTitle({ title, subtitle }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{title}</div>
-      {subtitle ? <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>{subtitle}</div> : null}
+      <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>{title}</div>
+      {subtitle ? (
+        <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
+          {subtitle}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -453,7 +461,7 @@ export default function AdminPage() {
                   <label key={pool.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10 }}>
                     <input type="checkbox" checked={selectedPoolIds.includes(pool.id)} onChange={() => togglePool(pool.id)} />
                     <div>
-                      <div style={{ fontWeight: 600, color: '#111827' }}>{pool.name}</div>
+                      <div style={{ fontWeight: 600, color: '#ffffff' }}>{pool.name}</div>
                       <div style={{ fontSize: 12, color: '#6b7280' }}>{pool.external_id}</div>
                     </div>
                   </label>
@@ -577,7 +585,7 @@ export default function AdminPage() {
                       ))}
                     </select>
                   </Field>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#ffffff' }}>
                     <input
                       type="checkbox"
                       checked={vmForm.observability_enabled}

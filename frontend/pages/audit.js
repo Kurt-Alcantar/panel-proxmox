@@ -61,7 +61,7 @@ export default function AuditPage() {
         )}
 
         {!loading && rows.length > 0 && (
-          <div className="tableWrap">
+          <div className="table-wrapp">
             <table className="table">
               <thead>
                 <tr>

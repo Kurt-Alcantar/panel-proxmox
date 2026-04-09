@@ -1,0 +1,24 @@
+/* ==========================================================================
+   Tokens globales de diseño
+   Uso: variables compartidas en todo el frontend
+   ========================================================================== */
+
+:root {
+  --bg: #0f0a1f;
+  --panel: #171129;
+  --panel-2: #21183a;
+  --panel-3: #2a1f49;
+  --border: #3b2d63;
+  --text: #f3edff;
+  --muted: #b8abd9;
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #dc2626;
+  --danger-hover: #ef4444;
+  --info: #38bdf8;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --radius: 16px;
+  --sidebar-width: 260px;
+}

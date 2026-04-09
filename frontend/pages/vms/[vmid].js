@@ -44,7 +44,7 @@ function DataTable({ columns, rows, emptyText = 'Sin datos', limit = null }) {
   if (!rows || rows.length === 0) return <div className="emptyState">{emptyText}</div>
   const displayed = limit && !expanded ? rows.slice(0, limit) : rows
   return (
-    <div className="tableWrap">
+    <div className="table-wrapp">
       <table className="table">
         <thead>
           <tr>{columns.map((c) => <th key={c.key}>{c.label}</th>)}</tr>
@@ -380,7 +380,7 @@ export default function VmDetailPage() {
 
         <div className="card cardPad">
           <div className="sectionTitle">Servicios monitoreados</div>
-          <div className="serviceChips native">
+          <div className="serviceChips">
             {(observability.services || []).map((s) => <span key={s} className="serviceChip">{s}</span>)}
             {!observability.services?.length && <span className="muted">Sin servicios definidos</span>}
           </div>
@@ -479,7 +479,7 @@ export default function VmDetailPage() {
         </div>
         <div className="card cardPad">
           <div className="sectionTitle">Servicios configurados sin telemetría reciente</div>
-          <div className="serviceChips native">
+          <div className="serviceChips">
             {(services?.missingConfiguredServices || []).map((s) => <span key={s} className="serviceChip mutedChip">{s}</span>)}
             {(!services?.missingConfiguredServices || services.missingConfiguredServices.length === 0) && (
               <span className="muted">Todos los servicios configurados tuvieron al menos un evento reciente.</span>

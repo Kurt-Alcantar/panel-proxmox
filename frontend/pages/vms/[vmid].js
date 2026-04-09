@@ -460,7 +460,9 @@ export default function VmDetailPage() {
         </div>
 
         <div className="card cardPad">
-          <div className="sectionTitle">RDP / WinRM / PSRemoting</div>
+          <div className="sectionTitle">
+            {vm?.os_type === 'linux' ? 'SSH / sudo / acceso remoto' : 'RDP / WinRM / PSRemoting'}
+          </div>
           <DataTable columns={secCols.remote} rows={security?.remoteAccess || []} limit={5} />
         </div>
       </>

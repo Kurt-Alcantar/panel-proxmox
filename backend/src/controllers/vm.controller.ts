@@ -134,16 +134,30 @@ export class VmController {
     if (!vm) return null;
 
     const observability = getVmObservability(vm);
-    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
+    if (!observability.enabled || !observability.hostName || !observability.osType) {
       return {
         enabled: false,
-        reason: 'Dashboard nativo de seguridad disponible solo para Windows por ahora.'
+        reason: 'Observabilidad no habilitada para esta VM.'
+      };
+    }
+
+    if (observability.osType === 'windows') {
+      return {
+        enabled: true,
+        ...(await this.observabilityNative.getWindowsSecurity(observability.hostName))
+      };
+    }
+
+    if (observability.osType === 'linux') {
+      return {
+        enabled: true,
+        ...(await this.observabilityNative.getLinuxSecurity(observability.hostName))
       };
     }
 
     return {
-      enabled: true,
-      ...(await this.observabilityNative.getWindowsSecurity(observability.hostName))
+      enabled: false,
+      reason: 'OS no soportado para dashboard nativo.'
     };
   }
 
@@ -159,18 +173,30 @@ export class VmController {
     if (!vm) return null;
 
     const observability = getVmObservability(vm);
-    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
+    if (!observability.enabled || !observability.hostName || !observability.osType) {
       return { enabled: false, reason: 'No disponible para esta VM.' };
     }
 
     const fromDate = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const toDate = to || new Date().toISOString();
 
-    return {
-      enabled: true,
-      vmName: vm.name,
-      ...(await this.observabilityNative.getWindowsSecurityExport(observability.hostName, fromDate, toDate))
-    };
+    if (observability.osType === 'windows') {
+      return {
+        enabled: true,
+        vmName: vm.name,
+        ...(await this.observabilityNative.getWindowsSecurityExport(observability.hostName, fromDate, toDate))
+      };
+    }
+
+    if (observability.osType === 'linux') {
+      return {
+        enabled: true,
+        vmName: vm.name,
+        ...(await this.observabilityNative.getLinuxSecurityExport(observability.hostName, fromDate, toDate))
+      };
+    }
+
+    return { enabled: false, reason: 'OS no soportado para export.' };
   }
 
   @UseGuards(AuthGuard)
@@ -180,19 +206,38 @@ export class VmController {
     if (!vm) return null;
 
     const observability = getVmObservability(vm);
-    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
+    if (!observability.enabled || !observability.hostName || !observability.osType) {
       return {
         enabled: false,
-        reason: 'Panel nativo de servicios disponible solo para Windows por ahora.'
+        reason: 'Observabilidad no habilitada para esta VM.'
+      };
+    }
+
+    const monitoredServices = getVmMonitoredServices(vm);
+
+    if (observability.osType === 'windows') {
+      return {
+        enabled: true,
+        ...(await this.observabilityNative.getWindowsServices(
+          observability.hostName,
+          monitoredServices
+        ))
+      };
+    }
+
+    if (observability.osType === 'linux') {
+      return {
+        enabled: true,
+        ...(await this.observabilityNative.getLinuxServices(
+          observability.hostName,
+          monitoredServices
+        ))
       };
     }
 
     return {
-      enabled: true,
-      ...(await this.observabilityNative.getWindowsServices(
-        observability.hostName,
-        getVmMonitoredServices(vm)
-      ))
+      enabled: false,
+      reason: 'OS no soportado para panel de servicios.'
     };
   }
 
@@ -203,16 +248,26 @@ export class VmController {
     if (!vm) return null;
 
     const observability = getVmObservability(vm);
-    if (!observability.enabled || !observability.hostName || observability.osType !== 'windows') {
+    if (!observability.enabled || !observability.hostName || !observability.osType) {
       return { enabled: false, rows: [] };
     }
 
-    return {
-      enabled: true,
-      rows: await this.observabilityNative.getWindowsEvents(observability.hostName)
-    };
-  }
+    if (observability.osType === 'windows') {
+      return {
+        enabled: true,
+        rows: await this.observabilityNative.getWindowsEvents(observability.hostName)
+      };
+    }
 
+    if (observability.osType === 'linux') {
+      return {
+        enabled: true,
+        rows: await this.observabilityNative.getLinuxEvents(observability.hostName)
+      };
+    }
+
+    return { enabled: false, rows: [] };
+  }
   @UseGuards(AuthGuard)
   @Get('vms')
   async list() {

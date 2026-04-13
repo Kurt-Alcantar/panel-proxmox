@@ -1554,4 +1554,99 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
       }))
     }
   }
+    async getOverview(hostName: string) {
+    const body = {
+      size: 0,
+      query: {
+        bool: {
+          filter: [this.hostFilter(hostName), this.range24h()]
+        }
+      },
+      aggs: {
+        cpu_avg: { avg: { field: 'system.cpu.total.norm.pct' } },
+        mem_avg: { avg: { field: 'system.memory.used.pct' } },
+        disk_max: { max: { field: 'system.filesystem.used.pct' } }
+      }
+    }
+
+    const metrics = await this.safeSearch('metrics-*', body)
+
+    const errorBody = {
+      size: 0,
+      query: {
+        bool: {
+          filter: [this.hostFilter(hostName), this.range24h()],
+          should: [{ terms: { 'log.level': ['error', 'critical', 'fatal'] } }],
+          minimum_should_match: 1
+        }
+      }
+    }
+
+    const errors = await this.safeSearch('logs-*', errorBody)
+
+    const latestBody = {
+      size: 1,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          filter: [this.hostFilter(hostName)]
+        }
+      },
+      _source: ['@timestamp']
+    }
+
+    const latest = await this.safeSearch('metrics-*,logs-*', latestBody)
+    const lastSeen = latest?.hits?.hits?.[0]?._source?.['@timestamp'] || null
+
+    const recentErrorsBody = {
+      size: 10,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: errorBody.query,
+      _source: [
+        '@timestamp',
+        'host.name',
+        'host.hostname',
+        'service.name',
+        'process.name',
+        'log.level',
+        'message',
+        'event.dataset',
+        'data_stream.dataset'
+      ]
+    }
+
+    const recentErrors = await this.safeSearch('logs-*', recentErrorsBody)
+
+    return {
+      cpuAvgPct: this.num(
+        metrics?.aggregations?.cpu_avg?.value
+          ? metrics.aggregations.cpu_avg.value * 100
+          : null
+      ),
+      memoryUsedPct: this.num(
+        metrics?.aggregations?.mem_avg?.value
+          ? metrics.aggregations.mem_avg.value * 100
+          : null
+      ),
+      diskUsedPct: this.num(
+        metrics?.aggregations?.disk_max?.value
+          ? metrics.aggregations.disk_max.value * 100
+          : null
+      ),
+      errorCount24h: errors?.hits?.total?.value || 0,
+      lastSeen,
+      recentErrors: (recentErrors?.hits?.hits || []).map((hit: any) => {
+        const src = this.hitSource(hit)
+        return {
+          timestamp: src['@timestamp'],
+          hostName: this.pick(src, 'host.hostname') || this.pick(src, 'host.name'),
+          serviceName: this.pick(src, 'service.name'),
+          processName: this.pick(src, 'process.name'),
+          level: this.pick(src, 'log.level'),
+          dataset: this.pick(src, 'event.dataset') || this.pick(src, 'data_stream.dataset'),
+          message: src.message || '-'
+        }
+      })
+    }
+  }
 }

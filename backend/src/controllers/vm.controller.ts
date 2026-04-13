@@ -12,7 +12,7 @@ import { PrismaService } from '../services/prisma.service';
 import { ProxmoxService } from '../services/proxmox.service';
 import { AuthGuard } from '../guards/auth.guard';
 import { AuditService } from '../services/audit.service';
-import { getVmMonitoredServices, getVmObservability } from '../observability';
+import { getVmObservability } from '../observability';
 import { ObservabilityNativeService } from '../services/observability-native.service';
 
 @Controller()
@@ -199,48 +199,39 @@ export class VmController {
     return { enabled: false, reason: 'OS no soportado para export.' };
   }
 
-  @UseGuards(AuthGuard)
-  @Get('vms/:vmid/observability/services')
-  async getVmServices(@Param('vmid') vmid: string, @Req() req: any) {
-    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
-    if (!vm) return null;
+@UseGuards(AuthGuard)
+@Get('vms/:vmid/observability/services')
+async getVmServices(@Param('vmid') vmid: string, @Req() req: any) {
+  const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub);
+  if (!vm) return null;
 
-    const observability = getVmObservability(vm);
-    if (!observability.enabled || !observability.hostName || !observability.osType) {
-      return {
-        enabled: false,
-        reason: 'Observabilidad no habilitada para esta VM.'
-      };
-    }
-
-    const monitoredServices = getVmMonitoredServices(vm);
-
-    if (observability.osType === 'windows') {
-      return {
-        enabled: true,
-        ...(await this.observabilityNative.getWindowsServices(
-          observability.hostName,
-          monitoredServices
-        ))
-      };
-    }
-
-    if (observability.osType === 'linux') {
-      return {
-        enabled: true,
-        ...(await this.observabilityNative.getLinuxServices(
-          observability.hostName,
-          monitoredServices
-        ))
-      };
-    }
-
+  const observability = getVmObservability(vm);
+  if (!observability.enabled || !observability.hostName || !observability.osType) {
     return {
       enabled: false,
-      reason: 'OS no soportado para panel de servicios.'
+      reason: 'Observabilidad no habilitada para esta VM.'
     };
   }
 
+  if (observability.osType === 'windows') {
+    return {
+      enabled: true,
+      ...(await this.observabilityNative.getWindowsServices(observability.hostName))
+    };
+  }
+
+  if (observability.osType === 'linux') {
+    return {
+      enabled: true,
+      ...(await this.observabilityNative.getLinuxServices(observability.hostName))
+    };
+  }
+
+  return {
+    enabled: false,
+    reason: 'OS no soportado para panel de servicios.'
+  };
+}
   @UseGuards(AuthGuard)
   @Get('vms/:vmid/observability/events')
   async getVmEvents(@Param('vmid') vmid: string, @Req() req: any) {

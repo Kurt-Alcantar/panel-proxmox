@@ -67,6 +67,113 @@ export class ObservabilityNativeService {
     return path.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : null), source)
   }
 
+  private normalizeDetectedServiceState(value: any, message?: string) {
+  const v = String(value || '').toLowerCase();
+  const m = String(message || '').toLowerCase();
+
+  if (['running', 'active', 'started', 'start_pending', 'continue_pending', 'up'].includes(v)) {
+    return 'running';
+  }
+
+  if (['stopped', 'inactive', 'failed', 'dead', 'down', 'stop_pending', 'paused', 'pause_pending'].includes(v)) {
+    return 'stopped';
+  }
+
+  if (/running|active|started|up/.test(m)) return 'running';
+  if (/stopped|inactive|failed|dead|down|exited/.test(m)) return 'stopped';
+
+  return 'unknown';
+}
+
+private classifyDetectedWindowsService(rawName?: string | null) {
+  const value = String(rawName || '').trim();
+  const n = value.toLowerCase();
+
+  if (!n) return null;
+
+  if (n.includes('veeam')) {
+    return { family: 'veeam', label: 'Veeam', priority: 10 };
+  }
+
+  if (n === 'mysql80' || n.includes('mysql')) {
+    return { family: 'mysql', label: 'MySQL', priority: 20 };
+  }
+
+  if (n.includes('postgres')) {
+    return { family: 'postgres', label: 'PostgreSQL', priority: 30 };
+  }
+
+  if (n === 'sqlbrowser' || n.includes('sql server browser')) {
+    return { family: 'sqlbrowser', label: 'SQL Browser', priority: 50 };
+  }
+
+  if (n === 'sqlwriter' || n.includes('sql server vss writer')) {
+    return { family: 'sqlwriter', label: 'SQL Writer', priority: 60 };
+  }
+
+  if (n.includes('telemetry') || n.includes('ceip')) {
+    return { family: 'sqltelemetry', label: 'SQL Telemetry', priority: 70 };
+  }
+
+  if (n.includes('sql server agent') || n.startsWith('sqlagent$')) {
+    return { family: 'sqlagent', label: 'SQL Agent', priority: 40 };
+  }
+
+  if (
+    (n.includes('sql server') || n.startsWith('mssql$')) &&
+    !n.includes('browser') &&
+    !n.includes('writer') &&
+    !n.includes('telemetry') &&
+    !n.includes('ceip') &&
+    !n.includes('internal database')
+  ) {
+    return { family: 'sqlserver', label: 'SQL Server', priority: 35 };
+  }
+
+  if (n.includes('windows internal database') || n.includes('microsoft##wid')) {
+    return { family: 'wid', label: 'Windows Internal Database', priority: 80 };
+  }
+
+  return null;
+}
+
+private classifyDetectedLinuxService(rawName?: string | null) {
+  const value = String(rawName || '').trim();
+  const n = value.toLowerCase();
+
+  if (!n) return null;
+
+  if (n.includes('postgres')) {
+    return { family: 'postgres', label: 'PostgreSQL', priority: 20 };
+  }
+
+  if (n.includes('mysql') || n.includes('mariadb')) {
+    return { family: 'mysql', label: 'MySQL/MariaDB', priority: 30 };
+  }
+
+  if (n.includes('nginx')) {
+    return { family: 'nginx', label: 'Nginx', priority: 40 };
+  }
+
+  if (n.includes('docker') || n.includes('containerd')) {
+    return { family: 'docker', label: 'Docker', priority: 50 };
+  }
+
+  if (n.includes('cloudflare') || n.includes('cloudflared')) {
+    return { family: 'cloudflare', label: 'Cloudflare', priority: 60 };
+  }
+
+  if (n.includes('plesk')) {
+    return { family: 'plesk', label: 'Plesk', priority: 70 };
+  }
+
+  if (n.includes('veeam')) {
+    return { family: 'veeam', label: 'Veeam', priority: 80 };
+  }
+
+  return null;
+}
+
   private msgContainsAny(field: string, values: string[]) {
     return {
       bool: {
@@ -170,114 +277,34 @@ private normalizeWindowsServiceState(value: any) {
   return 'unknown'
 }
 
-private async getSqlServiceState(hostName: string, instanceName?: string) {
-  const svc = this.buildSqlServiceCandidates(instanceName)
+async getSqlOverview(hostName: string) {
+  const performance = await this.getSqlPerformance(hostName);
 
-  const body = {
-    size: 200,
-    sort: [{ '@timestamp': { order: 'desc' } }],
-    query: {
-      bool: {
-        filter: [
-          this.hostFilter(hostName),
-          this.range24h()
-        ],
-        should: [
-          { exists: { field: 'windows.service.name' } },
-          { exists: { field: 'windows.service.display_name' } }
-        ],
-        minimum_should_match: 1
-      }
-    },
-    _source: [
-      '@timestamp',
-      'windows.service.name',
-      'windows.service.display_name',
-      'windows.service.state',
-      'message'
-    ]
+  const [serviceState, errors24h, security24h] = await Promise.all([
+    this.getSqlServiceState(hostName, performance?.instanceName),
+    this.getSqlErrors(hostName),
+    this.getSqlSecurity(hostName)
+  ]);
+
+  if (
+    (!serviceState?.engine || serviceState.engine.state === 'unknown') &&
+    performance?.timestamp &&
+    performance?.instanceName
+  ) {
+    serviceState.engine = {
+      timestamp: performance.timestamp,
+      serviceName: `SQL Server (${performance.instanceName})`,
+      state: 'running',
+      message: 'Inferido por métricas recientes de SQL Server'
+    };
   }
 
-  const res = await this.safeSearch('metrics-*,logs-*', body)
-  const hits = res?.hits?.hits || []
-
-  let engine: any = null
-  let agent: any = null
-
-  for (const hit of hits) {
-    const src = this.hitSource(hit)
-
-    const serviceName =
-      this.pick(src, 'windows.service.display_name') ||
-      this.pick(src, 'windows.service.name')
-
-    if (!serviceName) continue
-
-    const normalizedName = String(serviceName).toLowerCase()
-    const state = this.normalizeWindowsServiceState(
-      this.pick(src, 'windows.service.state')
-    )
-
-    if (
-      !engine &&
-      svc.engineNames.some((candidate) =>
-        normalizedName.includes(String(candidate).toLowerCase())
-      )
-    ) {
-      engine = {
-        timestamp: src['@timestamp'],
-        serviceName: String(serviceName),
-        state,
-        message: src.message || '-'
-      }
-      continue
-    }
-
-    if (
-      !agent &&
-      svc.agentNames.some((candidate) =>
-        normalizedName.includes(String(candidate).toLowerCase())
-      )
-    ) {
-      agent = {
-        timestamp: src['@timestamp'],
-        serviceName: String(serviceName),
-        state,
-        message: src.message || '-'
-      }
-    }
-  }
-
-  if (!engine) {
-    engine = {
-      timestamp: null,
-      serviceName: svc.isDefault
-        ? 'MSSQLSERVER'
-        : `SQL Server (${svc.instanceName})`,
-      state: 'unknown',
-      message: 'Sin telemetría reciente del servicio SQL'
-    }
-  }
-
-  if (!agent) {
-    agent = svc.isExpress
-      ? {
-          timestamp: null,
-          serviceName: `SQL Server Agent (${svc.instanceName})`,
-          state: 'not_applicable',
-          message: 'SQL Server Agent no aplica para esta edición/instancia Express'
-        }
-      : {
-          timestamp: null,
-          serviceName: svc.isDefault
-            ? 'SQLSERVERAGENT'
-            : `SQL Server Agent (${svc.instanceName})`,
-          state: 'unknown',
-          message: 'Sin telemetría reciente del servicio SQL Agent'
-        }
-  }
-
-  return { engine, agent }
+  return {
+    serviceState,
+    performance,
+    errors24h,
+    security24h
+  };
 }
   private async getSqlPerformance(hostName: string) {
     const body = {
@@ -825,9 +852,9 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
     }
   }
 
-  async getWindowsServices(hostName: string, monitoredServices: string[]) {
+  async getWindowsServices(hostName: string) {
     const body = {
-      size: 200,
+      size: 500,
       sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
@@ -839,39 +866,107 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
           minimum_should_match: 1
         }
       },
-      _source: ['@timestamp', 'windows.service.name', 'windows.service.display_name', 'windows.service.state', 'message']
-    }
+      _source: [
+        '@timestamp',
+        'windows.service.name',
+        'windows.service.display_name',
+        'windows.service.state',
+        'message'
+      ]
+    };
 
-    const res = await this.safeSearch('metrics-*,logs-*', body)
-    const configured = monitoredServices.map((item) => item.toLowerCase())
-    const latestByName = new Map<string, any>()
+    const res = await this.safeSearch('metrics-*,logs-*', body);
+    const latestByService = new Map<string, any>();
+    const familiesDetected = new Set<string>();
 
     for (const hit of res?.hits?.hits || []) {
-      const src = this.hitSource(hit)
-      const rawName = this.pick(src, 'windows.service.display_name') || this.pick(src, 'windows.service.name')
-      const state = this.pick(src, 'windows.service.state')
-      if (!rawName) continue
+      const src = this.hitSource(hit);
 
-      const serviceName = String(rawName)
-      const normalized = serviceName.toLowerCase()
-      const matches = !configured.length || configured.some((cfg) => normalized.includes(cfg))
-      if (!matches) continue
+      const serviceName =
+        this.pick(src, 'windows.service.display_name') ||
+        this.pick(src, 'windows.service.name');
 
-      if (!latestByName.has(serviceName)) {
-        latestByName.set(serviceName, {
-          timestamp: src['@timestamp'],
-          serviceName,
-          state: state || 'unknown',
-          message: src.message || '-'
-        })
-      }
+      if (!serviceName) continue;
+
+      const serviceNameStr = String(serviceName).trim();
+      const serviceKey = serviceNameStr.toLowerCase();
+
+      if (latestByService.has(serviceKey)) continue;
+
+      const meta = this.classifyDetectedWindowsService(serviceNameStr);
+      if (!meta) continue;
+
+      const row = {
+        timestamp: src['@timestamp'] || null,
+        serviceName: serviceNameStr,
+        state: this.normalizeDetectedServiceState(
+          this.pick(src, 'windows.service.state'),
+          src.message
+        ),
+        message: src.message || '-',
+        family: meta.family,
+        familyLabel: meta.label,
+        priority: meta.priority
+      };
+
+      latestByService.set(serviceKey, row);
+      familiesDetected.add(meta.family);
     }
 
-    const rows = Array.from(latestByName.values())
+    const rows = Array.from(latestByService.values()).sort((a: any, b: any) => {
+      if ((a.priority || 999) !== (b.priority || 999)) {
+        return (a.priority || 999) - (b.priority || 999);
+      }
+
+      return String(a.serviceName || '').localeCompare(String(b.serviceName || ''));
+    });
+
+    const details: Record<string, any> = {};
+
+    const hasSql =
+      rows.some((row: any) => ['sqlserver', 'sqlagent', 'sqlbrowser', 'sqlwriter', 'sqltelemetry'].includes(row.family));
+
+    if (hasSql) {
+      const sqlOverview = await this.getSqlOverview(hostName);
+      details.sqlserver = sqlOverview;
+
+      const addIfMissing = (item: any, family: string, priority: number) => {
+        if (!item?.serviceName) return;
+
+        const exists = rows.some((row: any) =>
+          String(row.serviceName || '').toLowerCase() === String(item.serviceName || '').toLowerCase()
+        );
+
+        if (!exists) {
+          rows.push({
+            timestamp: item.timestamp || null,
+            serviceName: item.serviceName,
+            state: item.state || 'unknown',
+            message: item.message || '-',
+            family,
+            familyLabel: family === 'sqlserver' ? 'SQL Server' : 'SQL Agent',
+            priority
+          });
+        }
+      };
+
+      addIfMissing(sqlOverview?.serviceState?.engine, 'sqlserver', 35);
+      addIfMissing(sqlOverview?.serviceState?.agent, 'sqlagent', 40);
+
+      rows.sort((a: any, b: any) => {
+        if ((a.priority || 999) !== (b.priority || 999)) {
+          return (a.priority || 999) - (b.priority || 999);
+        }
+
+        return String(a.serviceName || '').localeCompare(String(b.serviceName || ''));
+      });
+    }
+
     return {
       rows,
-      missingConfiguredServices: monitoredServices.filter((cfg) => !rows.some((row) => row.serviceName.toLowerCase().includes(cfg.toLowerCase())))
-    }
+      detectedFamilies: Array.from(familiesDetected),
+      details
+    };
   }
 
   async getWindowsEvents(hostName: string) {
@@ -903,11 +998,9 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
     })
   }
 
-  async getLinuxServices(hostName: string, monitoredServices: string[]) {
-    const configured = monitoredServices.map((item) => item.toLowerCase())
-
+  async getLinuxServices(hostName: string) {
     const body = {
-      size: 300,
+      size: 500,
       sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
@@ -915,15 +1008,8 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
           should: [
             { exists: { field: 'system.service.name' } },
             { exists: { field: 'system.service.state' } },
-            {
-              bool: {
-                should: [
-                  this.msgContainsAny('message', ['failed', 'stopped', 'exited', 'inactive', 'dead']),
-                  { terms: { 'process.name': configured.length ? configured : ['nginx', 'docker', 'dockerd', 'cloudflared', 'plesk'] } }
-                ],
-                minimum_should_match: 1
-              }
-            }
+            { exists: { field: 'service.name' } },
+            { exists: { field: 'process.name' } }
           ],
           minimum_should_match: 1
         }
@@ -932,58 +1018,64 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
         '@timestamp',
         'system.service.name',
         'system.service.state',
-        'process.name',
         'service.name',
-        'data_stream.dataset',
-        'event.dataset',
-        'log.level',
+        'process.name',
         'message'
       ]
-    }
+    };
 
-    const res = await this.safeSearch('metrics-*,logs-*', body)
-    const latestByName = new Map<string, any>()
+    const res = await this.safeSearch('metrics-*,logs-*', body);
+    const latestByService = new Map<string, any>();
+    const familiesDetected = new Set<string>();
 
     for (const hit of res?.hits?.hits || []) {
-      const src = this.hitSource(hit)
+      const src = this.hitSource(hit);
+
       const rawName =
         this.pick(src, 'system.service.name') ||
         this.pick(src, 'service.name') ||
-        this.pick(src, 'process.name')
+        this.pick(src, 'process.name');
 
-      if (!rawName) continue
+      if (!rawName) continue;
 
-      const serviceName = String(rawName)
-      const normalized = serviceName.toLowerCase()
+      const serviceName = String(rawName).trim();
+      const serviceKey = serviceName.toLowerCase();
 
-      const matches =
-        !configured.length ||
-        configured.some((cfg) => normalized.includes(cfg))
+      if (latestByService.has(serviceKey)) continue;
 
-      if (!matches) continue
+      const meta = this.classifyDetectedLinuxService(serviceName);
+      if (!meta) continue;
 
-      const state =
-        this.pick(src, 'system.service.state') ||
-        (String(src.message || '').match(/failed|inactive|dead|stopped|exited/i) ? 'problem' : 'unknown')
+      const row = {
+        timestamp: src['@timestamp'] || null,
+        serviceName,
+        state: this.normalizeDetectedServiceState(
+          this.pick(src, 'system.service.state'),
+          src.message
+        ),
+        message: src.message || '-',
+        family: meta.family,
+        familyLabel: meta.label,
+        priority: meta.priority
+      };
 
-      if (!latestByName.has(serviceName)) {
-        latestByName.set(serviceName, {
-          timestamp: src['@timestamp'],
-          serviceName,
-          state,
-          message: src.message || '-'
-        })
-      }
+      latestByService.set(serviceKey, row);
+      familiesDetected.add(meta.family);
     }
 
-    const rows = Array.from(latestByName.values())
+    const rows = Array.from(latestByService.values()).sort((a: any, b: any) => {
+      if ((a.priority || 999) !== (b.priority || 999)) {
+        return (a.priority || 999) - (b.priority || 999);
+      }
+
+      return String(a.serviceName || '').localeCompare(String(b.serviceName || ''));
+    });
 
     return {
       rows,
-      missingConfiguredServices: monitoredServices.filter(
-        (cfg) => !rows.some((row) => row.serviceName.toLowerCase().includes(cfg.toLowerCase()))
-      )
-    }
+      detectedFamilies: Array.from(familiesDetected),
+      details: {}
+    };
   }
 
   async getLinuxEvents(hostName: string) {

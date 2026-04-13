@@ -4,7 +4,6 @@ import AppShell from '../../components/AppShell'
 
 const WINDOWS_TABS = {
   overview: 'Resumen',
-  sql: 'SQL',
   security: 'Seguridad',
   services: 'Servicios',
   events: 'Eventos',
@@ -12,10 +11,13 @@ const WINDOWS_TABS = {
 }
 
 function KpiCard({ label, value, tone = 'default' }) {
+  const safeValue =
+    value === null || value === undefined || value === '' ? '-' : value
+
   return (
     <div className={`card metricCard tone-${tone}`}>
       <div className="metricTitle">{label}</div>
-      <div className="metricValue">{value ?? '-'}</div>
+      <div className="metricValue">{safeValue}</div>
     </div>
   )
 }
@@ -42,8 +44,16 @@ function MiniBarList({ rows, emptyText = 'Sin datos' }) {
 
 function DataTable({ columns, rows, emptyText = 'Sin datos', limit = null }) {
   const [expanded, setExpanded] = useState(false)
+
   if (!rows || rows.length === 0) return <div className="emptyState">{emptyText}</div>
+
   const displayed = limit && !expanded ? rows.slice(0, limit) : rows
+
+  const formatCell = (value) => {
+    if (value === null || value === undefined || value === '') return '-'
+    return value
+  }
+
   return (
     <div className="table-wrapp">
       <table className="table">
@@ -52,8 +62,8 @@ function DataTable({ columns, rows, emptyText = 'Sin datos', limit = null }) {
         </thead>
         <tbody>
           {displayed.map((row, i) => (
-            <tr key={row.id || row.timestamp || i}>
-              {columns.map((c) => <td key={c.key}>{row[c.key] || '-'}</td>)}
+            <tr key={row.id || row.timestamp || row.serviceName || i}>
+              {columns.map((c) => <td key={c.key}>{formatCell(row[c.key])}</td>)}
             </tr>
           ))}
         </tbody>
@@ -121,7 +131,7 @@ function ExportModal({ vmid, vmName, onClose, apiGet }) {
 }
 
 function generatePDF(data, vmName, from, to) {
-  const fmt = (v) => v || '-'
+  const fmt = (v) => (v === null || v === undefined || v === '' ? '-' : v)
   const ts = (v) => v ? new Date(v).toLocaleString('es-MX') : '-'
 
   const tableHtml = (columns, rows) => {
@@ -135,7 +145,7 @@ function generatePDF(data, vmName, from, to) {
   const kpiBox = (label, value, color) =>
     `<div style="background:#1e2235;border-radius:8px;padding:12px 16px;min-width:100px;text-align:center">
       <div style="font-size:11px;color:#a0aec0;margin-bottom:4px">${label}</div>
-      <div style="font-size:22px;font-weight:700;color:${color}">${value}</div>
+      <div style="font-size:22px;font-weight:700;color:${color}">${fmt(value)}</div>
     </div>`
 
   const section = (title, content) =>
@@ -230,7 +240,6 @@ export default function VmDetailPage() {
   const { vmid } = router.query
   const redirecting = useRef(false)
 
-  const [sqlOverview, setSqlOverview] = useState(null)
   const [vm, setVm] = useState(null)
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
@@ -249,11 +258,16 @@ export default function VmDetailPage() {
   const apiGet = async (path) => {
     let activeToken = localStorage.getItem('token')
     if (!activeToken) {
-      if (!redirecting.current) { redirecting.current = true; router.replace('/login') }
+      if (!redirecting.current) {
+        redirecting.current = true
+        router.replace('/login')
+      }
       return null
     }
 
-    let res = await fetch(path, { headers: { Authorization: `Bearer ${activeToken}` } })
+    let res = await fetch(path, {
+      headers: { Authorization: `Bearer ${activeToken}` }
+    })
 
     if (res.status === 401) {
       const refreshToken = localStorage.getItem('refresh_token')
@@ -268,7 +282,9 @@ export default function VmDetailPage() {
             const data = await refreshRes.json()
             localStorage.setItem('token', data.access_token)
             localStorage.setItem('refresh_token', data.refresh_token || '')
-            res = await fetch(path, { headers: { Authorization: `Bearer ${data.access_token}` } })
+            res = await fetch(path, {
+              headers: { Authorization: `Bearer ${data.access_token}` }
+            })
           }
         } catch (_) {}
       }
@@ -277,7 +293,10 @@ export default function VmDetailPage() {
     if (res.status === 401) {
       localStorage.removeItem('token')
       localStorage.removeItem('refresh_token')
-      if (!redirecting.current) { redirecting.current = true; router.replace('/login') }
+      if (!redirecting.current) {
+        redirecting.current = true
+        router.replace('/login')
+      }
       return null
     }
 
@@ -292,7 +311,8 @@ export default function VmDetailPage() {
   const fetchVm = async () => {
     if (!vmid || !token) return
     try {
-      setLoading(true); setError('')
+      setLoading(true)
+      setError('')
       const data = await apiGet(`/api/vms/${vmid}`)
       if (data) setVm(data)
     } catch (err) {
@@ -305,22 +325,39 @@ export default function VmDetailPage() {
   const fetchTabData = async () => {
     if (!vmid || !token) return
     if (tab === 'overview' && overview) return
-    if (tab === 'sql' && sqlOverview) return
     if (tab === 'security' && security) return
     if (tab === 'services' && services) return
     if (tab === 'events' && events) return
     if (tab === 'audit' && auditRows.length) return
+
     try {
-      setTabLoading(true); setTabError('')
-      if (tab === 'overview') { const d = await apiGet(`/api/vms/${vmid}/observability/overview`); if (d) setOverview(d) }
-      if (tab === 'sql') {
-        const d = await apiGet(`/api/vms/${vmid}/observability/sql`)
-        if (d) setSqlOverview(d)
+      setTabLoading(true)
+      setTabError('')
+
+      if (tab === 'overview') {
+        const d = await apiGet(`/api/vms/${vmid}/observability/overview`)
+        if (d) setOverview(d)
       }
-      if (tab === 'security') { const d = await apiGet(`/api/vms/${vmid}/observability/security`); if (d) setSecurity(d) }
-      if (tab === 'services') { const d = await apiGet(`/api/vms/${vmid}/observability/services`); if (d) setServices(d) }
-      if (tab === 'events') { const d = await apiGet(`/api/vms/${vmid}/observability/events`); if (d) setEvents(d) }
-      if (tab === 'audit') { const d = await apiGet(`/api/vms/${vmid}/audit`); if (d) setAuditRows(d) }
+
+      if (tab === 'security') {
+        const d = await apiGet(`/api/vms/${vmid}/observability/security`)
+        if (d) setSecurity(d)
+      }
+
+      if (tab === 'services') {
+        const d = await apiGet(`/api/vms/${vmid}/observability/services`)
+        if (d) setServices(d)
+      }
+
+      if (tab === 'events') {
+        const d = await apiGet(`/api/vms/${vmid}/observability/events`)
+        if (d) setEvents(d)
+      }
+
+      if (tab === 'audit') {
+        const d = await apiGet(`/api/vms/${vmid}/audit`)
+        if (d) setAuditRows(d)
+      }
     } catch (err) {
       setTabError(err.message || 'No se pudo cargar la vista')
     } finally {
@@ -342,14 +379,55 @@ export default function VmDetailPage() {
     return `${Number(value).toFixed(1)}%`
   }
 
+  const toneForState = (state) => {
+    const v = String(state || '').toLowerCase()
+    if (v === 'running') return 'success'
+    if (v === 'stopped' || v === 'failed') return 'danger'
+    if (v === 'not_applicable') return 'info'
+    return 'warning'
+  }
+
   const observability = vm?.observability || { enabled: false, services: [] }
 
   const secCols = {
-    success: [{ key: 'timestamp', label: 'Fecha' }, { key: 'user', label: 'Usuario' }, { key: 'sourceIp', label: 'IP' }, { key: 'logonType', label: 'Tipo logon' }, { key: 'message', label: 'Mensaje' }],
-    failed: [{ key: 'timestamp', label: 'Fecha' }, { key: 'user', label: 'Usuario' }, { key: 'sourceIp', label: 'IP' }, { key: 'status', label: 'Status' }, { key: 'subStatus', label: 'SubStatus' }, { key: 'message', label: 'Mensaje' }],
-    privilege: [{ key: 'timestamp', label: 'Fecha' }, { key: 'eventCode', label: 'Evento' }, { key: 'user', label: 'Usuario' }, { key: 'privilegeList', label: 'Privilegios' }, { key: 'message', label: 'Mensaje' }],
-    userChanges: [{ key: 'timestamp', label: 'Fecha' }, { key: 'eventCode', label: 'Evento' }, { key: 'targetUser', label: 'Usuario objetivo' }, { key: 'actorUser', label: 'Actor' }, { key: 'memberName', label: 'Miembro' }, { key: 'message', label: 'Mensaje' }],
-    remote: [{ key: 'timestamp', label: 'Fecha' }, { key: 'user', label: 'Usuario' }, { key: 'sourceIp', label: 'IP' }, { key: 'processName', label: 'Proceso' }, { key: 'logonType', label: 'Tipo' }, { key: 'message', label: 'Mensaje' }]
+    success: [
+      { key: 'timestamp', label: 'Fecha' },
+      { key: 'user', label: 'Usuario' },
+      { key: 'sourceIp', label: 'IP' },
+      { key: 'logonType', label: 'Tipo logon' },
+      { key: 'message', label: 'Mensaje' }
+    ],
+    failed: [
+      { key: 'timestamp', label: 'Fecha' },
+      { key: 'user', label: 'Usuario' },
+      { key: 'sourceIp', label: 'IP' },
+      { key: 'status', label: 'Status' },
+      { key: 'subStatus', label: 'SubStatus' },
+      { key: 'message', label: 'Mensaje' }
+    ],
+    privilege: [
+      { key: 'timestamp', label: 'Fecha' },
+      { key: 'eventCode', label: 'Evento' },
+      { key: 'user', label: 'Usuario' },
+      { key: 'privilegeList', label: 'Privilegios' },
+      { key: 'message', label: 'Mensaje' }
+    ],
+    userChanges: [
+      { key: 'timestamp', label: 'Fecha' },
+      { key: 'eventCode', label: 'Evento' },
+      { key: 'targetUser', label: 'Usuario objetivo' },
+      { key: 'actorUser', label: 'Actor' },
+      { key: 'memberName', label: 'Miembro' },
+      { key: 'message', label: 'Mensaje' }
+    ],
+    remote: [
+      { key: 'timestamp', label: 'Fecha' },
+      { key: 'user', label: 'Usuario' },
+      { key: 'sourceIp', label: 'IP' },
+      { key: 'processName', label: 'Proceso' },
+      { key: 'logonType', label: 'Tipo' },
+      { key: 'message', label: 'Mensaje' }
+    ]
   }
 
   const renderOverview = () => (
@@ -401,7 +479,14 @@ export default function VmDetailPage() {
       <div className="card cardPad">
         <div className="sectionTitle">Errores recientes</div>
         <DataTable
-          columns={[{ key: 'timestamp', label: 'Fecha' }, { key: 'level', label: 'Nivel' }, { key: 'serviceName', label: 'Servicio' }, { key: 'processName', label: 'Proceso' }, { key: 'dataset', label: 'Dataset' }, { key: 'message', label: 'Mensaje' }]}
+          columns={[
+            { key: 'timestamp', label: 'Fecha' },
+            { key: 'level', label: 'Nivel' },
+            { key: 'serviceName', label: 'Servicio' },
+            { key: 'processName', label: 'Proceso' },
+            { key: 'dataset', label: 'Dataset' },
+            { key: 'message', label: 'Mensaje' }
+          ]}
           rows={overview?.recentErrors || []}
           emptyText="Sin errores en las últimas 24 horas."
           limit={5}
@@ -409,156 +494,6 @@ export default function VmDetailPage() {
       </div>
     </>
   )
-
-  const renderSql = () => {
-    if (sqlOverview?.enabled === false) {
-      return (
-        <div className="card cardPad">
-          <div className="emptyState">{sqlOverview.reason}</div>
-        </div>
-      )
-    }
-
-    const engineState = sqlOverview?.serviceState?.engine?.state || '-'
-    const agentState = sqlOverview?.serviceState?.agent?.state || '-'
-
-    return (
-      <>
-        <div className="metricGrid compact">
-          <KpiCard
-            label="SQL Engine"
-            value={engineState}
-            tone={
-              engineState === 'running'
-                ? 'success'
-                : engineState === 'stopped'
-                  ? 'danger'
-                  : 'warning'
-            }
-          />
-          <KpiCard
-            label="SQL Agent"
-            value={agentState}
-            tone={
-              agentState === 'running'
-                ? 'success'
-                : agentState === 'stopped'
-                  ? 'danger'
-                  : 'warning'
-            }
-          />
-          <KpiCard
-            label="Errores 24h"
-            value={sqlOverview?.errors24h?.total ?? '-'}
-            tone="danger"
-          />
-          <KpiCard
-            label="Errores críticos"
-            value={sqlOverview?.errors24h?.critical ?? '-'}
-            tone="danger"
-          />
-          <KpiCard
-            label="Failed logins"
-            value={sqlOverview?.security24h?.failedLogins ?? '-'}
-            tone="warning"
-          />
-          <KpiCard
-            label="Eventos privilegio"
-            value={sqlOverview?.security24h?.privilegeEvents ?? '-'}
-            tone="info"
-          />
-        </div>
-
-        <div className="nativeGridTwo">
-          <div className="card cardPad">
-            <div className="sectionTitle">Servicios SQL</div>
-            <DataTable
-              columns={[
-                { key: 'timestamp', label: 'Fecha' },
-                { key: 'serviceName', label: 'Servicio' },
-                { key: 'state', label: 'Estado' },
-                { key: 'message', label: 'Mensaje' }
-              ]}
-              rows={[
-                sqlOverview?.serviceState?.engine,
-                sqlOverview?.serviceState?.agent
-              ].filter(Boolean)}
-              emptyText="Sin telemetría reciente de servicios SQL."
-            />
-          </div>
-
-          <div className="card cardPad">
-            <div className="sectionTitle">Performance SQL</div>
-            <div className="metricGrid compact">
-              <KpiCard
-                label="User connections"
-                value={sqlOverview?.performance?.userConnections ?? '-'}
-                tone="info"
-              />
-              <KpiCard
-                label="Batch req/sec"
-                value={sqlOverview?.performance?.batchRequestsPerSec ?? '-'}
-                tone="info"
-              />
-              <KpiCard
-                label="Lock waits/sec"
-                value={sqlOverview?.performance?.lockWaitsPerSec ?? '-'}
-                tone="warning"
-              />
-              <KpiCard
-                label="Memory grants pending"
-                value={sqlOverview?.performance?.memoryGrantsPending ?? '-'}
-                tone="warning"
-              />
-              <KpiCard
-                label="PLE"
-                value={sqlOverview?.performance?.pageLifeExpectancy ?? '-'}
-                tone="info"
-              />
-              <KpiCard
-                label="Logins/sec"
-                value={sqlOverview?.performance?.loginsPerSec ?? '-'}
-                tone="info"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="card cardPad">
-          <div className="sectionTitle">Errores SQL recientes</div>
-          <DataTable
-            columns={[
-              { key: 'timestamp', label: 'Fecha' },
-              { key: 'level', label: 'Nivel' },
-              { key: 'origin', label: 'Origen' },
-              { key: 'dataset', label: 'Dataset' },
-              { key: 'message', label: 'Mensaje' }
-            ]}
-            rows={sqlOverview?.errors24h?.latest || []}
-            emptyText="Sin errores SQL recientes."
-            limit={5}
-          />
-        </div>
-
-        <div className="card cardPad">
-          <div className="sectionTitle">Eventos de seguridad SQL</div>
-          <DataTable
-            columns={[
-              { key: 'timestamp', label: 'Fecha' },
-              { key: 'action', label: 'Acción' },
-              { key: 'outcome', label: 'Resultado' },
-              { key: 'user', label: 'Usuario' },
-              { key: 'sourceIp', label: 'IP' },
-              { key: 'message', label: 'Mensaje' }
-            ]}
-            rows={sqlOverview?.security24h?.latest || []}
-            emptyText="Sin eventos de seguridad SQL recientes."
-            limit={5}
-          />
-        </div>
-      </>
-    )
-  }
 
   const renderSecurity = () => {
     if (security?.enabled === false) {
@@ -629,21 +564,159 @@ export default function VmDetailPage() {
     if (services?.enabled === false) {
       return <div className="card cardPad"><div className="emptyState">{services.reason}</div></div>
     }
+
+    const serviceRows = services?.rows || []
+    const sqlData = services?.details?.sqlserver || services?.sqlserver || services?.sql || null
+
+    const hasSqlDetected =
+      Boolean(sqlData) ||
+      serviceRows.some((row) =>
+        /sql server|mssql|sqlagent/i.test(String(row.serviceName || ''))
+      )
+
+    const engineState = sqlData?.serviceState?.engine?.state || '-'
+    const agentState = sqlData?.serviceState?.agent?.state || '-'
+
     return (
       <>
         <div className="card cardPad">
           <div className="sectionTitle">Estado de servicios</div>
-          <DataTable columns={[{ key: 'timestamp', label: 'Fecha' }, { key: 'serviceName', label: 'Servicio' }, { key: 'state', label: 'Estado' }, { key: 'message', label: 'Mensaje' }]} rows={services?.rows || []} emptyText="No se detectaron estados recientes." limit={5} />
+          <DataTable
+            columns={[
+              { key: 'timestamp', label: 'Fecha' },
+              { key: 'serviceName', label: 'Servicio' },
+              { key: 'state', label: 'Estado' },
+              { key: 'message', label: 'Mensaje' }
+            ]}
+            rows={serviceRows}
+            emptyText="No se detectaron estados recientes."
+            limit={10}
+          />
         </div>
-        <div className="card cardPad">
-          <div className="sectionTitle">Servicios configurados sin telemetría reciente</div>
-          <div className="serviceChips">
-            {(services?.missingConfiguredServices || []).map((s) => <span key={s} className="serviceChip mutedChip">{s}</span>)}
-            {(!services?.missingConfiguredServices || services.missingConfiguredServices.length === 0) && (
-              <span className="muted">Todos los servicios configurados tuvieron al menos un evento reciente.</span>
-            )}
+
+        {services?.missingConfiguredServices?.length > 0 && (
+          <div className="card cardPad">
+            <div className="sectionTitle">Servicios configurados sin telemetría reciente</div>
+            <div className="serviceChips">
+              {services.missingConfiguredServices.map((s) => (
+                <span key={s} className="serviceChip mutedChip">{s}</span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {hasSqlDetected && sqlData && (
+          <>
+            <div className="card cardPad">
+              <div className="sectionTitle">Monitoreo SQL detectado en esta VM</div>
+              <div className="metricGrid compact">
+                <KpiCard label="SQL Engine" value={engineState} tone={toneForState(engineState)} />
+                <KpiCard label="SQL Agent" value={agentState} tone={toneForState(agentState)} />
+                <KpiCard label="Errores 24h" value={sqlData?.errors24h?.total ?? '-'} tone="danger" />
+                <KpiCard label="Errores críticos" value={sqlData?.errors24h?.critical ?? '-'} tone="danger" />
+                <KpiCard label="Failed logins" value={sqlData?.security24h?.failedLogins ?? '-'} tone="warning" />
+                <KpiCard label="Eventos privilegio" value={sqlData?.security24h?.privilegeEvents ?? '-'} tone="info" />
+              </div>
+            </div>
+
+            <div className="nativeGridTwo">
+              <div className="card cardPad">
+                <div className="sectionTitle">Servicios SQL</div>
+                <DataTable
+                  columns={[
+                    { key: 'timestamp', label: 'Fecha' },
+                    { key: 'serviceName', label: 'Servicio' },
+                    { key: 'state', label: 'Estado' },
+                    { key: 'message', label: 'Mensaje' }
+                  ]}
+                  rows={[
+                    sqlData?.serviceState?.engine,
+                    sqlData?.serviceState?.agent
+                  ].filter(Boolean)}
+                  emptyText="Sin telemetría reciente de servicios SQL."
+                />
+              </div>
+
+              <div className="card cardPad">
+                <div className="sectionTitle">Performance SQL</div>
+                <div className="metricGrid compact">
+                  <KpiCard
+                    label="User connections"
+                    value={sqlData?.performance?.userConnections ?? '-'}
+                    tone="info"
+                  />
+                  <KpiCard
+                    label="Batch req/sec"
+                    value={sqlData?.performance?.batchRequestsPerSec ?? '-'}
+                    tone="info"
+                  />
+                  <KpiCard
+                    label="Lock waits/sec"
+                    value={sqlData?.performance?.lockWaitsPerSec ?? '-'}
+                    tone="warning"
+                  />
+                  <KpiCard
+                    label="Memory grants pending"
+                    value={sqlData?.performance?.memoryGrantsPending ?? '-'}
+                    tone="warning"
+                  />
+                  <KpiCard
+                    label="PLE"
+                    value={sqlData?.performance?.pageLifeExpectancy ?? '-'}
+                    tone="info"
+                  />
+                  <KpiCard
+                    label="Logins/sec"
+                    value={sqlData?.performance?.loginsPerSec ?? '-'}
+                    tone="info"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="card cardPad">
+              <div className="sectionTitle">Errores SQL recientes</div>
+              <DataTable
+                columns={[
+                  { key: 'timestamp', label: 'Fecha' },
+                  { key: 'level', label: 'Nivel' },
+                  { key: 'origin', label: 'Origen' },
+                  { key: 'dataset', label: 'Dataset' },
+                  { key: 'message', label: 'Mensaje' }
+                ]}
+                rows={sqlData?.errors24h?.latest || []}
+                emptyText="Sin errores SQL recientes."
+                limit={5}
+              />
+            </div>
+
+            <div className="card cardPad">
+              <div className="sectionTitle">Eventos de seguridad SQL</div>
+              <DataTable
+                columns={[
+                  { key: 'timestamp', label: 'Fecha' },
+                  { key: 'action', label: 'Acción' },
+                  { key: 'outcome', label: 'Resultado' },
+                  { key: 'user', label: 'Usuario' },
+                  { key: 'sourceIp', label: 'IP' },
+                  { key: 'message', label: 'Mensaje' }
+                ]}
+                rows={sqlData?.security24h?.latest || []}
+                emptyText="Sin eventos de seguridad SQL recientes."
+                limit={5}
+              />
+            </div>
+          </>
+        )}
+
+        {hasSqlDetected && !sqlData && (
+          <div className="card cardPad">
+            <div className="sectionTitle">Monitoreo SQL detectado en esta VM</div>
+            <div className="emptyState">
+              Se detectaron servicios SQL, pero el backend aún no devolvió el detalle enriquecido de SQL en `services.details.sqlserver`.
+            </div>
+          </div>
+        )}
       </>
     )
   }
@@ -651,26 +724,50 @@ export default function VmDetailPage() {
   const renderEvents = () => (
     <div className="card cardPad">
       <div className="sectionTitle">Eventos recientes del host</div>
-      <DataTable columns={[{ key: 'timestamp', label: 'Fecha' }, { key: 'channel', label: 'Canal' }, { key: 'eventCode', label: 'Evento' }, { key: 'action', label: 'Acción' }, { key: 'level', label: 'Nivel' }, { key: 'processName', label: 'Proceso' }, { key: 'serviceName', label: 'Servicio' }, { key: 'sourceIp', label: 'IP' }, { key: 'message', label: 'Mensaje' }]} rows={events?.rows || []} limit={5} />
+      <DataTable
+        columns={[
+          { key: 'timestamp', label: 'Fecha' },
+          { key: 'channel', label: 'Canal' },
+          { key: 'eventCode', label: 'Evento' },
+          { key: 'action', label: 'Acción' },
+          { key: 'level', label: 'Nivel' },
+          { key: 'processName', label: 'Proceso' },
+          { key: 'serviceName', label: 'Servicio' },
+          { key: 'sourceIp', label: 'IP' },
+          { key: 'message', label: 'Mensaje' }
+        ]}
+        rows={events?.rows || []}
+        limit={5}
+      />
     </div>
   )
 
   const renderAudit = () => (
     <div className="card cardPad">
       <div className="sectionTitle">Auditoría del portal</div>
-      <DataTable columns={[{ key: 'created_at', label: 'Fecha' }, { key: 'user_id', label: 'User ID' }, { key: 'action', label: 'Acción' }, { key: 'result', label: 'Resultado' }]} rows={auditRows || []} emptyText="Sin acciones registradas para esta VM." limit={5} />
+      <DataTable
+        columns={[
+          { key: 'created_at', label: 'Fecha' },
+          { key: 'user_id', label: 'User ID' },
+          { key: 'action', label: 'Acción' },
+          { key: 'result', label: 'Resultado' }
+        ]}
+        rows={auditRows || []}
+        emptyText="Sin acciones registradas para esta VM."
+        limit={5}
+      />
     </div>
   )
 
   const activeTabView = useMemo(() => {
     if (tab === 'overview') return renderOverview()
-    if (tab === 'sql') return renderSql()
     if (tab === 'security') return renderSecurity()
     if (tab === 'services') return renderServices()
     if (tab === 'events') return renderEvents()
     if (tab === 'audit') return renderAudit()
     return null
-  }, [tab, vm, overview, sqlOverview, security, services, events, auditRows, tabLoading])
+  }, [tab, vm, overview, security, services, events, auditRows, tabLoading])
+
   return (
     <AppShell title={vm ? vm.name : 'Detalle VM'}>
       {loading && <div className="portal-info">Cargando...</div>}
@@ -698,11 +795,19 @@ export default function VmDetailPage() {
             </div>
             <div className="actions">
               <button className="btn btnSecondary" onClick={() => router.push('/vms')}>Volver</button>
-              <button className="btn btnPrimary" onClick={async () => {
-                const res = await fetch(`/api/vms/${vmid}/console`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-                const data = await res.json()
-                if (data?.url) window.open(data.url, '_blank', 'noopener,noreferrer')
-              }}>Abrir consola</button>
+              <button
+                className="btn btnPrimary"
+                onClick={async () => {
+                  const res = await fetch(`/api/vms/${vmid}/console`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                  })
+                  const data = await res.json()
+                  if (data?.url) window.open(data.url, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                Abrir consola
+              </button>
             </div>
           </div>
 
@@ -715,7 +820,13 @@ export default function VmDetailPage() {
 
           <div className="tabBar">
             {Object.entries(WINDOWS_TABS).map(([key, label]) => (
-              <button key={key} className={`tabBtn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</button>
+              <button
+                key={key}
+                className={`tabBtn ${tab === key ? 'active' : ''}`}
+                onClick={() => setTab(key)}
+              >
+                {label}
+              </button>
             ))}
           </div>
 

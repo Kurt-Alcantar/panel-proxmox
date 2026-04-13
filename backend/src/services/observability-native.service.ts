@@ -130,137 +130,155 @@ export class ObservabilityNativeService {
     }
   }
 
-  private normalizeState(value: any, message?: string) {
-    const v = String(value || '').toLowerCase()
-    const m = String(message || '').toLowerCase()
+private buildSqlServiceCandidates(instanceName?: string) {
+  const raw = String(instanceName || '').trim()
+  const upper = raw.toUpperCase()
 
-    if (['running', 'up', 'started', 'start_pending', 'active'].includes(v)) return 'running'
-    if (['stopped', 'stop_pending', 'dead', 'failed', 'inactive', 'down'].includes(v)) return 'stopped'
-    if (/running|started|active/.test(m)) return 'running'
-    if (/failed|stopped|inactive|dead|terminated/.test(m)) return 'stopped'
-    return 'unknown'
-  }
+  const isDefault = !raw || upper === 'MSSQLSERVER'
+  const isExpress = /EXPRESS/i.test(raw)
 
-  private sqlServiceRole(name: string) {
-    const v = String(name || '').toLowerCase()
-
-    if (
-      v.includes('sqlserveragent') ||
-      v.includes('sqlagent') ||
-      v.includes('sql server agent')
-    ) return 'agent'
-
-    if (
-      v.includes('mssqlserver') ||
-      v.includes('mssql$') ||
-      v.includes('sql server') ||
-      v.includes('sqlservr') ||
-      v.includes('mssql-server')
-    ) return 'engine'
-
-    return null
-  }
-
-  private async getSqlServiceState(hostName: string) {
-    const body = {
-      size: 100,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h()],
-          should: [
-            { terms: { 'windows.service.name': ['MSSQLSERVER', 'SQLSERVERAGENT'] } },
-            {
-              wildcard: {
-                'windows.service.name': {
-                  value: 'MSSQL$*',
-                  case_insensitive: true
-                }
-              }
-            },
-            {
-              wildcard: {
-                'windows.service.name': {
-                  value: 'SQLAgent$*',
-                  case_insensitive: true
-                }
-              }
-            },
-            {
-              wildcard: {
-                'windows.service.display_name': {
-                  value: '*SQL Server*',
-                  case_insensitive: true
-                }
-              }
-            },
-            { terms: { 'system.service.name': ['mssql-server'] } },
-            { terms: { 'process.name': ['sqlservr', 'sqlservr.exe', 'sqlagent.exe'] } }
-          ],
-          minimum_should_match: 1
-        }
-      },
-      _source: [
-        '@timestamp',
-        'windows.service.name',
-        'windows.service.display_name',
-        'windows.service.state',
-        'system.service.name',
-        'system.service.state',
-        'process.name',
-        'message'
+  const engineNames = isDefault
+    ? ['MSSQLSERVER', 'SQL Server (MSSQLSERVER)', 'SQL Server']
+    : [
+        `MSSQL$${upper}`,
+        `SQL Server (${raw})`,
+        `SQL Server (${upper})`
       ]
-    }
 
-    const res = await this.safeSearch('metrics-*,logs-*', body)
+  const agentNames = isDefault
+    ? ['SQLSERVERAGENT', 'SQL Server Agent (MSSQLSERVER)', 'SQL Server Agent']
+    : [
+        `SQLAgent$${upper}`,
+        `SQL Server Agent (${raw})`,
+        `SQL Server Agent (${upper})`
+      ]
 
-    const found: Record<string, any> = {
-      engine: null,
-      agent: null
-    }
+  return {
+    instanceName: raw || 'MSSQLSERVER',
+    isDefault,
+    isExpress,
+    engineNames,
+    agentNames
+  }
+}
 
-    for (const hit of res?.hits?.hits || []) {
-      const src = this.hitSource(hit)
-      const rawName =
-        this.pick(src, 'windows.service.display_name') ||
-        this.pick(src, 'windows.service.name') ||
-        this.pick(src, 'system.service.name') ||
-        this.pick(src, 'process.name')
+private normalizeWindowsServiceState(value: any) {
+  const v = String(value || '').toLowerCase()
 
-      if (!rawName) continue
+  if (['running', 'start_pending', 'continue_pending'].includes(v)) return 'running'
+  if (['stopped', 'stop_pending', 'paused', 'pause_pending'].includes(v)) return 'stopped'
+  return 'unknown'
+}
 
-      const role = this.sqlServiceRole(String(rawName))
-      if (!role || found[role]) continue
+private async getSqlServiceState(hostName: string, instanceName?: string) {
+  const svc = this.buildSqlServiceCandidates(instanceName)
 
-      const state = this.normalizeState(
-        this.pick(src, 'windows.service.state') || this.pick(src, 'system.service.state'),
-        src.message
+  const body = {
+    size: 200,
+    sort: [{ '@timestamp': { order: 'desc' } }],
+    query: {
+      bool: {
+        filter: [
+          this.hostFilter(hostName),
+          this.range24h()
+        ],
+        should: [
+          { exists: { field: 'windows.service.name' } },
+          { exists: { field: 'windows.service.display_name' } }
+        ],
+        minimum_should_match: 1
+      }
+    },
+    _source: [
+      '@timestamp',
+      'windows.service.name',
+      'windows.service.display_name',
+      'windows.service.state',
+      'message'
+    ]
+  }
+
+  const res = await this.safeSearch('metrics-*,logs-*', body)
+  const hits = res?.hits?.hits || []
+
+  let engine: any = null
+  let agent: any = null
+
+  for (const hit of hits) {
+    const src = this.hitSource(hit)
+
+    const serviceName =
+      this.pick(src, 'windows.service.display_name') ||
+      this.pick(src, 'windows.service.name')
+
+    if (!serviceName) continue
+
+    const normalizedName = String(serviceName).toLowerCase()
+    const state = this.normalizeWindowsServiceState(
+      this.pick(src, 'windows.service.state')
+    )
+
+    if (
+      !engine &&
+      svc.engineNames.some((candidate) =>
+        normalizedName.includes(String(candidate).toLowerCase())
       )
-
-      found[role] = {
+    ) {
+      engine = {
         timestamp: src['@timestamp'],
-        serviceName: String(rawName),
+        serviceName: String(serviceName),
+        state,
+        message: src.message || '-'
+      }
+      continue
+    }
+
+    if (
+      !agent &&
+      svc.agentNames.some((candidate) =>
+        normalizedName.includes(String(candidate).toLowerCase())
+      )
+    ) {
+      agent = {
+        timestamp: src['@timestamp'],
+        serviceName: String(serviceName),
         state,
         message: src.message || '-'
       }
     }
+  }
 
-    return {
-      engine: found.engine || {
-        timestamp: null,
-        serviceName: 'SQL Server',
-        state: 'unknown',
-        message: 'Sin telemetría reciente del servicio'
-      },
-      agent: found.agent || {
-        timestamp: null,
-        serviceName: 'SQL Server Agent',
-        state: 'unknown',
-        message: 'Sin telemetría reciente del servicio'
-      }
+  if (!engine) {
+    engine = {
+      timestamp: null,
+      serviceName: svc.isDefault
+        ? 'MSSQLSERVER'
+        : `SQL Server (${svc.instanceName})`,
+      state: 'unknown',
+      message: 'Sin telemetría reciente del servicio SQL'
     }
   }
 
+  if (!agent) {
+    agent = svc.isExpress
+      ? {
+          timestamp: null,
+          serviceName: `SQL Server Agent (${svc.instanceName})`,
+          state: 'not_applicable',
+          message: 'SQL Server Agent no aplica para esta edición/instancia Express'
+        }
+      : {
+          timestamp: null,
+          serviceName: svc.isDefault
+            ? 'SQLSERVERAGENT'
+            : `SQL Server Agent (${svc.instanceName})`,
+          state: 'unknown',
+          message: 'Sin telemetría reciente del servicio SQL Agent'
+        }
+  }
+
+  return { engine, agent }
+}
   private async getSqlPerformance(hostName: string) {
     const body = {
       size: 1,
@@ -407,9 +425,10 @@ export class ObservabilityNativeService {
   }
 
   async getSqlOverview(hostName: string) {
-    const [serviceState, performance, errors24h, security24h] = await Promise.all([
-      this.getSqlServiceState(hostName),
-      this.getSqlPerformance(hostName),
+    const performance = await this.getSqlPerformance(hostName)
+
+    const [serviceState, errors24h, security24h] = await Promise.all([
+      this.getSqlServiceState(hostName, performance?.instanceName),
       this.getSqlErrors(hostName),
       this.getSqlSecurity(hostName)
     ])
@@ -421,7 +440,6 @@ export class ObservabilityNativeService {
       security24h
     }
   }
-
   async getOverview(hostName: string) {
     const body = {
       size: 0,

@@ -277,35 +277,116 @@ private normalizeWindowsServiceState(value: any) {
   return 'unknown'
 }
 
-async getSqlOverview(hostName: string) {
-  const performance = await this.getSqlPerformance(hostName);
+private async getSqlServiceState(hostName: string, instanceName?: string) {
+  const svc = this.buildSqlServiceCandidates(instanceName)
 
-  const [serviceState, errors24h, security24h] = await Promise.all([
-    this.getSqlServiceState(hostName, performance?.instanceName),
-    this.getSqlErrors(hostName),
-    this.getSqlSecurity(hostName)
-  ]);
-
-  if (
-    (!serviceState?.engine || serviceState.engine.state === 'unknown') &&
-    performance?.timestamp &&
-    performance?.instanceName
-  ) {
-    serviceState.engine = {
-      timestamp: performance.timestamp,
-      serviceName: `SQL Server (${performance.instanceName})`,
-      state: 'running',
-      message: 'Inferido por métricas recientes de SQL Server'
-    };
+  const body = {
+    size: 200,
+    sort: [{ '@timestamp': { order: 'desc' } }],
+    query: {
+      bool: {
+        filter: [
+          this.hostFilter(hostName),
+          this.range24h()
+        ],
+        should: [
+          { exists: { field: 'windows.service.name' } },
+          { exists: { field: 'windows.service.display_name' } }
+        ],
+        minimum_should_match: 1
+      }
+    },
+    _source: [
+      '@timestamp',
+      'windows.service.name',
+      'windows.service.display_name',
+      'windows.service.state',
+      'message'
+    ]
   }
 
-  return {
-    serviceState,
-    performance,
-    errors24h,
-    security24h
-  };
+  const res = await this.safeSearch('metrics-*,logs-*', body)
+  const hits = res?.hits?.hits || []
+
+  let engine: any = null
+  let agent: any = null
+
+  for (const hit of hits) {
+    const src = this.hitSource(hit)
+
+    const serviceName =
+      this.pick(src, 'windows.service.display_name') ||
+      this.pick(src, 'windows.service.name')
+
+    if (!serviceName) continue
+
+    const normalizedName = String(serviceName).toLowerCase()
+    const state = this.normalizeWindowsServiceState(
+      this.pick(src, 'windows.service.state')
+    )
+
+    if (
+      !engine &&
+      svc.engineNames.some((candidate) =>
+        normalizedName.includes(String(candidate).toLowerCase())
+      )
+    ) {
+      engine = {
+        timestamp: src['@timestamp'],
+        serviceName: String(serviceName),
+        state,
+        message: src.message || '-'
+      }
+      continue
+    }
+
+    if (
+      !agent &&
+      svc.agentNames.some((candidate) =>
+        normalizedName.includes(String(candidate).toLowerCase())
+      )
+    ) {
+      agent = {
+        timestamp: src['@timestamp'],
+        serviceName: String(serviceName),
+        state,
+        message: src.message || '-'
+      }
+    }
+  }
+
+  if (!engine) {
+    engine = {
+      timestamp: null,
+      serviceName: svc.isDefault
+        ? 'MSSQLSERVER'
+        : `SQL Server (${svc.instanceName})`,
+      state: 'unknown',
+      message: 'Sin telemetría reciente del servicio SQL'
+    }
+  }
+
+  if (!agent) {
+    agent = svc.isExpress
+      ? {
+          timestamp: null,
+          serviceName: `SQL Server Agent (${svc.instanceName})`,
+          state: 'not_applicable',
+          message: 'SQL Server Agent no aplica para esta edición/instancia Express'
+        }
+      : {
+          timestamp: null,
+          serviceName: svc.isDefault
+            ? 'SQLSERVERAGENT'
+            : `SQL Server Agent (${svc.instanceName})`,
+          state: 'unknown',
+          message: 'Sin telemetría reciente del servicio SQL Agent'
+        }
+  }
+
+  return { engine, agent }
 }
+
   private async getSqlPerformance(hostName: string) {
     const body = {
       size: 1,
@@ -451,6 +532,7 @@ async getSqlOverview(hostName: string) {
     }
   }
 
+
   async getSqlOverview(hostName: string) {
     const performance = await this.getSqlPerformance(hostName)
 
@@ -460,80 +542,24 @@ async getSqlOverview(hostName: string) {
       this.getSqlSecurity(hostName)
     ])
 
+    if (
+      (!serviceState?.engine || serviceState.engine.state === 'unknown') &&
+      performance?.timestamp &&
+      performance?.instanceName
+    ) {
+      serviceState.engine = {
+        timestamp: performance.timestamp,
+        serviceName: `SQL Server (${performance.instanceName})`,
+        state: 'running',
+        message: 'Inferido por métricas recientes de SQL Server'
+      }
+    }
+
     return {
       serviceState,
       performance,
       errors24h,
       security24h
-    }
-  }
-  async getOverview(hostName: string) {
-    const body = {
-      size: 0,
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h()]
-        }
-      },
-      aggs: {
-        cpu_avg: { avg: { field: 'system.cpu.total.norm.pct' } },
-        mem_avg: { avg: { field: 'system.memory.used.pct' } },
-        disk_max: { max: { field: 'system.filesystem.used.pct' } }
-      }
-    }
-
-    const metrics = await this.safeSearch('metrics-*', body)
-
-    const errorBody = {
-      size: 0,
-      query: {
-        bool: {
-          filter: [this.hostFilter(hostName), this.range24h()],
-          should: [{ terms: { 'log.level': ['error', 'critical', 'fatal'] } }],
-          minimum_should_match: 1
-        }
-      }
-    }
-
-    const errors = await this.safeSearch('logs-*', errorBody)
-
-    const latestBody = {
-      size: 1,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: { bool: { filter: [this.hostFilter(hostName)] } },
-      _source: ['@timestamp']
-    }
-
-    const latest = await this.safeSearch('metrics-*,logs-*', latestBody)
-    const lastSeen = latest?.hits?.hits?.[0]?._source?.['@timestamp'] || null
-
-    const recentErrorsBody = {
-      size: 10,
-      sort: [{ '@timestamp': { order: 'desc' } }],
-      query: errorBody.query,
-      _source: ['@timestamp', 'host.name', 'host.hostname', 'service.name', 'process.name', 'log.level', 'message', 'event.dataset', 'data_stream.dataset']
-    }
-
-    const recentErrors = await this.safeSearch('logs-*', recentErrorsBody)
-
-    return {
-      cpuAvgPct: this.num(metrics?.aggregations?.cpu_avg?.value ? metrics.aggregations.cpu_avg.value * 100 : null),
-      memoryUsedPct: this.num(metrics?.aggregations?.mem_avg?.value ? metrics.aggregations.mem_avg.value * 100 : null),
-      diskUsedPct: this.num(metrics?.aggregations?.disk_max?.value ? metrics.aggregations.disk_max.value * 100 : null),
-      errorCount24h: errors?.hits?.total?.value || 0,
-      lastSeen,
-      recentErrors: (recentErrors?.hits?.hits || []).map((hit: any) => {
-        const src = this.hitSource(hit)
-        return {
-          timestamp: src['@timestamp'],
-          hostName: this.pick(src, 'host.hostname') || this.pick(src, 'host.name'),
-          serviceName: this.pick(src, 'service.name'),
-          processName: this.pick(src, 'process.name'),
-          level: this.pick(src, 'log.level'),
-          dataset: this.pick(src, 'event.dataset') || this.pick(src, 'data_stream.dataset'),
-          message: src.message || '-'
-        }
-      })
     }
   }
 

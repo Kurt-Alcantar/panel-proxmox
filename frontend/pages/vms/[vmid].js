@@ -4,6 +4,7 @@ import AppShell from '../../components/AppShell'
 
 const WINDOWS_TABS = {
   overview: 'Resumen',
+  sql: 'SQL',
   security: 'Seguridad',
   services: 'Servicios',
   events: 'Eventos',
@@ -229,6 +230,7 @@ export default function VmDetailPage() {
   const { vmid } = router.query
   const redirecting = useRef(false)
 
+  const [sqlOverview, setSqlOverview] = useState(null)
   const [vm, setVm] = useState(null)
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
@@ -303,14 +305,18 @@ export default function VmDetailPage() {
   const fetchTabData = async () => {
     if (!vmid || !token) return
     if (tab === 'overview' && overview) return
+    if (tab === 'sql' && sqlOverview) return
     if (tab === 'security' && security) return
     if (tab === 'services' && services) return
     if (tab === 'events' && events) return
     if (tab === 'audit' && auditRows.length) return
-
     try {
       setTabLoading(true); setTabError('')
       if (tab === 'overview') { const d = await apiGet(`/api/vms/${vmid}/observability/overview`); if (d) setOverview(d) }
+      if (tab === 'sql') {
+        const d = await apiGet(`/api/vms/${vmid}/observability/sql`)
+        if (d) setSqlOverview(d)
+      }
       if (tab === 'security') { const d = await apiGet(`/api/vms/${vmid}/observability/security`); if (d) setSecurity(d) }
       if (tab === 'services') { const d = await apiGet(`/api/vms/${vmid}/observability/services`); if (d) setServices(d) }
       if (tab === 'events') { const d = await apiGet(`/api/vms/${vmid}/observability/events`); if (d) setEvents(d) }
@@ -403,6 +409,156 @@ export default function VmDetailPage() {
       </div>
     </>
   )
+
+  const renderSql = () => {
+    if (sqlOverview?.enabled === false) {
+      return (
+        <div className="card cardPad">
+          <div className="emptyState">{sqlOverview.reason}</div>
+        </div>
+      )
+    }
+
+    const engineState = sqlOverview?.serviceState?.engine?.state || '-'
+    const agentState = sqlOverview?.serviceState?.agent?.state || '-'
+
+    return (
+      <>
+        <div className="metricGrid compact">
+          <KpiCard
+            label="SQL Engine"
+            value={engineState}
+            tone={
+              engineState === 'running'
+                ? 'success'
+                : engineState === 'stopped'
+                  ? 'danger'
+                  : 'warning'
+            }
+          />
+          <KpiCard
+            label="SQL Agent"
+            value={agentState}
+            tone={
+              agentState === 'running'
+                ? 'success'
+                : agentState === 'stopped'
+                  ? 'danger'
+                  : 'warning'
+            }
+          />
+          <KpiCard
+            label="Errores 24h"
+            value={sqlOverview?.errors24h?.total ?? '-'}
+            tone="danger"
+          />
+          <KpiCard
+            label="Errores críticos"
+            value={sqlOverview?.errors24h?.critical ?? '-'}
+            tone="danger"
+          />
+          <KpiCard
+            label="Failed logins"
+            value={sqlOverview?.security24h?.failedLogins ?? '-'}
+            tone="warning"
+          />
+          <KpiCard
+            label="Eventos privilegio"
+            value={sqlOverview?.security24h?.privilegeEvents ?? '-'}
+            tone="info"
+          />
+        </div>
+
+        <div className="nativeGridTwo">
+          <div className="card cardPad">
+            <div className="sectionTitle">Servicios SQL</div>
+            <DataTable
+              columns={[
+                { key: 'timestamp', label: 'Fecha' },
+                { key: 'serviceName', label: 'Servicio' },
+                { key: 'state', label: 'Estado' },
+                { key: 'message', label: 'Mensaje' }
+              ]}
+              rows={[
+                sqlOverview?.serviceState?.engine,
+                sqlOverview?.serviceState?.agent
+              ].filter(Boolean)}
+              emptyText="Sin telemetría reciente de servicios SQL."
+            />
+          </div>
+
+          <div className="card cardPad">
+            <div className="sectionTitle">Performance SQL</div>
+            <div className="metricGrid compact">
+              <KpiCard
+                label="User connections"
+                value={sqlOverview?.performance?.userConnections ?? '-'}
+                tone="info"
+              />
+              <KpiCard
+                label="Batch req/sec"
+                value={sqlOverview?.performance?.batchRequestsPerSec ?? '-'}
+                tone="info"
+              />
+              <KpiCard
+                label="Lock waits/sec"
+                value={sqlOverview?.performance?.lockWaitsPerSec ?? '-'}
+                tone="warning"
+              />
+              <KpiCard
+                label="Memory grants pending"
+                value={sqlOverview?.performance?.memoryGrantsPending ?? '-'}
+                tone="warning"
+              />
+              <KpiCard
+                label="PLE"
+                value={sqlOverview?.performance?.pageLifeExpectancy ?? '-'}
+                tone="info"
+              />
+              <KpiCard
+                label="Logins/sec"
+                value={sqlOverview?.performance?.loginsPerSec ?? '-'}
+                tone="info"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="card cardPad">
+          <div className="sectionTitle">Errores SQL recientes</div>
+          <DataTable
+            columns={[
+              { key: 'timestamp', label: 'Fecha' },
+              { key: 'level', label: 'Nivel' },
+              { key: 'origin', label: 'Origen' },
+              { key: 'dataset', label: 'Dataset' },
+              { key: 'message', label: 'Mensaje' }
+            ]}
+            rows={sqlOverview?.errors24h?.latest || []}
+            emptyText="Sin errores SQL recientes."
+            limit={5}
+          />
+        </div>
+
+        <div className="card cardPad">
+          <div className="sectionTitle">Eventos de seguridad SQL</div>
+          <DataTable
+            columns={[
+              { key: 'timestamp', label: 'Fecha' },
+              { key: 'action', label: 'Acción' },
+              { key: 'outcome', label: 'Resultado' },
+              { key: 'user', label: 'Usuario' },
+              { key: 'sourceIp', label: 'IP' },
+              { key: 'message', label: 'Mensaje' }
+            ]}
+            rows={sqlOverview?.security24h?.latest || []}
+            emptyText="Sin eventos de seguridad SQL recientes."
+            limit={5}
+          />
+        </div>
+      </>
+    )
+  }
 
   const renderSecurity = () => {
     if (security?.enabled === false) {
@@ -508,13 +664,13 @@ export default function VmDetailPage() {
 
   const activeTabView = useMemo(() => {
     if (tab === 'overview') return renderOverview()
+    if (tab === 'sql') return renderSql()
     if (tab === 'security') return renderSecurity()
     if (tab === 'services') return renderServices()
     if (tab === 'events') return renderEvents()
     if (tab === 'audit') return renderAudit()
     return null
-  }, [tab, vm, overview, security, services, events, auditRows, tabLoading])
-
+  }, [tab, vm, overview, sqlOverview, security, services, events, auditRows, tabLoading])
   return (
     <AppShell title={vm ? vm.name : 'Detalle VM'}>
       {loading && <div className="portal-info">Cargando...</div>}

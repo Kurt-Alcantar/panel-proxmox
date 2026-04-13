@@ -488,4 +488,25 @@ export class VmController {
       take: 100
     });
   }
+  @UseGuards(AuthGuard)
+  @Get('vms/:vmid/observability/sql')
+  async getVmSql(@Param('vmid') vmid: string, @Req() req: any) {
+    const vm = await this.findAccessibleVm(Number(vmid), req.user?.sub)
+    if (!vm) return null
+
+    const observability = getVmObservability(vm)
+    if (!observability.enabled || !observability.hostName) {
+      return {
+        enabled: false,
+        reason: 'Observabilidad no habilitada para esta VM.'
+      }
+    }
+
+    return {
+      enabled: true,
+      hostName: observability.hostName,
+      osType: observability.osType,
+      ...(await this.observabilityNative.getSqlOverview(observability.hostName))
+    }
+  }
 }

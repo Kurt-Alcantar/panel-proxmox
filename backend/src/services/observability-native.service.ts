@@ -93,6 +93,335 @@ export class ObservabilityNativeService {
     return Array.from(out)
   }
 
+    private sqlHostFilter(hostName: string) {
+    const raw = String(hostName || '').trim()
+    const lower = raw.toLowerCase()
+
+    return {
+      bool: {
+        should: [
+          this.hostFilter(hostName),
+          { term: { 'mssql.metrics.server_name.keyword': raw } },
+          { term: { 'mssql.metrics.server_name': raw } },
+          { term: { 'mssql.metrics.server_name': lower } },
+          {
+            wildcard: {
+              'mssql.metrics.server_name': {
+                value: `*${raw}*`,
+                case_insensitive: true
+              }
+            }
+          }
+        ],
+        minimum_should_match: 1
+      }
+    }
+  }
+
+  private sqlDatasetFilter(dataset: string) {
+    return {
+      bool: {
+        should: [
+          { term: { 'event.dataset': dataset } },
+          { term: { 'data_stream.dataset': dataset } }
+        ],
+        minimum_should_match: 1
+      }
+    }
+  }
+
+  private normalizeState(value: any, message?: string) {
+    const v = String(value || '').toLowerCase()
+    const m = String(message || '').toLowerCase()
+
+    if (['running', 'up', 'started', 'start_pending', 'active'].includes(v)) return 'running'
+    if (['stopped', 'stop_pending', 'dead', 'failed', 'inactive', 'down'].includes(v)) return 'stopped'
+    if (/running|started|active/.test(m)) return 'running'
+    if (/failed|stopped|inactive|dead|terminated/.test(m)) return 'stopped'
+    return 'unknown'
+  }
+
+  private sqlServiceRole(name: string) {
+    const v = String(name || '').toLowerCase()
+
+    if (
+      v.includes('sqlserveragent') ||
+      v.includes('sqlagent') ||
+      v.includes('sql server agent')
+    ) return 'agent'
+
+    if (
+      v.includes('mssqlserver') ||
+      v.includes('mssql$') ||
+      v.includes('sql server') ||
+      v.includes('sqlservr') ||
+      v.includes('mssql-server')
+    ) return 'engine'
+
+    return null
+  }
+
+  private async getSqlServiceState(hostName: string) {
+    const body = {
+      size: 100,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          filter: [this.hostFilter(hostName), this.range24h()],
+          should: [
+            { terms: { 'windows.service.name': ['MSSQLSERVER', 'SQLSERVERAGENT'] } },
+            {
+              wildcard: {
+                'windows.service.name': {
+                  value: 'MSSQL$*',
+                  case_insensitive: true
+                }
+              }
+            },
+            {
+              wildcard: {
+                'windows.service.name': {
+                  value: 'SQLAgent$*',
+                  case_insensitive: true
+                }
+              }
+            },
+            {
+              wildcard: {
+                'windows.service.display_name': {
+                  value: '*SQL Server*',
+                  case_insensitive: true
+                }
+              }
+            },
+            { terms: { 'system.service.name': ['mssql-server'] } },
+            { terms: { 'process.name': ['sqlservr', 'sqlservr.exe', 'sqlagent.exe'] } }
+          ],
+          minimum_should_match: 1
+        }
+      },
+      _source: [
+        '@timestamp',
+        'windows.service.name',
+        'windows.service.display_name',
+        'windows.service.state',
+        'system.service.name',
+        'system.service.state',
+        'process.name',
+        'message'
+      ]
+    }
+
+    const res = await this.safeSearch('metrics-*,logs-*', body)
+
+    const found: Record<string, any> = {
+      engine: null,
+      agent: null
+    }
+
+    for (const hit of res?.hits?.hits || []) {
+      const src = this.hitSource(hit)
+      const rawName =
+        this.pick(src, 'windows.service.display_name') ||
+        this.pick(src, 'windows.service.name') ||
+        this.pick(src, 'system.service.name') ||
+        this.pick(src, 'process.name')
+
+      if (!rawName) continue
+
+      const role = this.sqlServiceRole(String(rawName))
+      if (!role || found[role]) continue
+
+      const state = this.normalizeState(
+        this.pick(src, 'windows.service.state') || this.pick(src, 'system.service.state'),
+        src.message
+      )
+
+      found[role] = {
+        timestamp: src['@timestamp'],
+        serviceName: String(rawName),
+        state,
+        message: src.message || '-'
+      }
+    }
+
+    return {
+      engine: found.engine || {
+        timestamp: null,
+        serviceName: 'SQL Server',
+        state: 'unknown',
+        message: 'Sin telemetría reciente del servicio'
+      },
+      agent: found.agent || {
+        timestamp: null,
+        serviceName: 'SQL Server Agent',
+        state: 'unknown',
+        message: 'Sin telemetría reciente del servicio'
+      }
+    }
+  }
+
+  private async getSqlPerformance(hostName: string) {
+    const body = {
+      size: 1,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          filter: [
+            this.sqlHostFilter(hostName),
+            this.range24h(),
+            this.sqlDatasetFilter('microsoft_sqlserver.performance')
+          ]
+        }
+      },
+      _source: ['@timestamp', 'mssql.metrics']
+    }
+
+    const res = await this.safeSearch('metrics-microsoft_sqlserver.performance*', body)
+    const src = this.hitSource(res?.hits?.hits?.[0])
+
+    return {
+      timestamp: src['@timestamp'] || null,
+      userConnections: this.pick(src, 'mssql.metrics.user_connections'),
+      batchRequestsPerSec: this.pick(src, 'mssql.metrics.batch_requests_per_sec'),
+      lockWaitsPerSec: this.pick(src, 'mssql.metrics.lock_waits_per_sec'),
+      loginsPerSec: this.pick(src, 'mssql.metrics.logins_per_sec'),
+      memoryGrantsPending: this.pick(src, 'mssql.metrics.memory_grants_pending'),
+      pageLifeExpectancy: this.pick(src, 'mssql.metrics.buffer_page_life_expectancy'),
+      transactions: this.pick(src, 'mssql.metrics.transactions'),
+      serverName: this.pick(src, 'mssql.metrics.server_name'),
+      instanceName: this.pick(src, 'mssql.metrics.instance_name')
+    }
+  }
+
+  private async getSqlErrors(hostName: string) {
+    const body = {
+      size: 20,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          filter: [
+            this.sqlHostFilter(hostName),
+            this.range24h(),
+            this.sqlDatasetFilter('microsoft_sqlserver.log')
+          ],
+          should: [
+            { terms: { 'log.level': ['error', 'critical', 'fatal'] } },
+            this.msgContainsAny('message', [
+              'error',
+              'failed',
+              'severity',
+              'corrupt',
+              'recovery',
+              'login failed',
+              'deadlock'
+            ])
+          ],
+          minimum_should_match: 1
+        }
+      },
+      _source: [
+        '@timestamp',
+        'log.level',
+        'message',
+        'event.dataset',
+        'data_stream.dataset',
+        'microsoft_sqlserver.log.origin'
+      ]
+    }
+
+    const res = await this.safeSearch('logs-microsoft_sqlserver.log*', body)
+    const rows = (res?.hits?.hits || []).map((hit: any) => {
+      const src = this.hitSource(hit)
+      return {
+        timestamp: src['@timestamp'],
+        level: this.pick(src, 'log.level'),
+        origin: this.pick(src, 'microsoft_sqlserver.log.origin'),
+        dataset: this.pick(src, 'event.dataset') || this.pick(src, 'data_stream.dataset'),
+        message: src.message || '-'
+      }
+    })
+
+    return {
+      total: rows.length,
+      critical: rows.filter((row: any) =>
+        ['critical', 'fatal'].includes(String(row.level || '').toLowerCase()) ||
+        /deadlock|corrupt|severity/i.test(String(row.message || ''))
+      ).length,
+      latest: rows
+    }
+  }
+
+  private async getSqlSecurity(hostName: string) {
+    const body = {
+      size: 20,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          filter: [
+            this.sqlHostFilter(hostName),
+            this.range24h(),
+            this.sqlDatasetFilter('microsoft_sqlserver.audit')
+          ]
+        }
+      },
+      _source: [
+        '@timestamp',
+        'event.action',
+        'event.outcome',
+        'user.name',
+        'source.ip',
+        'message'
+      ]
+    }
+
+    const res = await this.safeSearch('logs-microsoft_sqlserver.audit*', body)
+    const rows = (res?.hits?.hits || []).map((hit: any) => {
+      const src = this.hitSource(hit)
+      return {
+        timestamp: src['@timestamp'],
+        action: this.pick(src, 'event.action'),
+        outcome: this.pick(src, 'event.outcome'),
+        user: this.pick(src, 'user.name'),
+        sourceIp: this.pick(src, 'source.ip'),
+        message: src.message || '-'
+      }
+    })
+
+    const failedLogins = rows.filter((row: any) =>
+      String(row.outcome || '').toLowerCase() === 'failure' ||
+      /failed|login failed|authentication/i.test(String(row.message || ''))
+    ).length
+
+    const privilegeEvents = rows.filter((row: any) =>
+      /grant|deny|role|permission|server role|db_owner|db_datareader|db_datawriter/i.test(String(row.message || '')) ||
+      /grant|deny|role|permission/i.test(String(row.action || ''))
+    ).length
+
+    return {
+      total: rows.length,
+      failedLogins,
+      privilegeEvents,
+      latest: rows
+    }
+  }
+
+  async getSqlOverview(hostName: string) {
+    const [serviceState, performance, errors24h, security24h] = await Promise.all([
+      this.getSqlServiceState(hostName),
+      this.getSqlPerformance(hostName),
+      this.getSqlErrors(hostName),
+      this.getSqlSecurity(hostName)
+    ])
+
+    return {
+      serviceState,
+      performance,
+      errors24h,
+      security24h
+    }
+  }
+
   async getOverview(hostName: string) {
     const body = {
       size: 0,

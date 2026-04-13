@@ -562,7 +562,199 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
       security24h
     }
   }
+  private classifyVeeamResult(message?: string, eventAction?: string, outcome?: string) {
+    const msg = String(message || '').toLowerCase()
+    const act = String(eventAction || '').toLowerCase()
+    const out = String(outcome || '').toLowerCase()
 
+    if (
+      out === 'failure' ||
+      /failed|failure|error|terminated|did not complete/i.test(msg) ||
+      /failed|failure|error/.test(act)
+    ) {
+      return 'failed'
+    }
+
+    if (
+      out === 'success' ||
+      /success|completed successfully|backup completed|job completed/i.test(msg) ||
+      /success|completed/.test(act)
+    ) {
+      return 'success'
+    }
+
+    if (/warning|completed with warning/i.test(msg) || /warning/.test(act)) {
+      return 'warning'
+    }
+
+    if (/started|running|in progress|processing/i.test(msg) || /start|running/.test(act)) {
+      return 'running'
+    }
+
+    return 'unknown'
+  }
+
+  async getVeeamOverview(hostName: string) {
+    const baseFilter = [this.hostFilter(hostName), this.range24h()]
+
+    const summaryBody = {
+      size: 0,
+      query: {
+        bool: {
+          filter: baseFilter,
+          should: [
+            { wildcard: { 'windows.service.display_name': { value: '*Veeam*', case_insensitive: true } } },
+            { wildcard: { 'windows.service.name': { value: '*veeam*', case_insensitive: true } } },
+            { wildcard: { 'service.name': { value: '*veeam*', case_insensitive: true } } },
+            { wildcard: { 'process.name': { value: '*veeam*', case_insensitive: true } } },
+            { wildcard: { message: { value: '*Veeam*', case_insensitive: true } } }
+          ],
+          minimum_should_match: 1
+        }
+      },
+      aggs: {
+        by_result: {
+          filters: {
+            filters: {
+              success: {
+                bool: {
+                  should: [
+                    { term: { 'event.outcome': 'success' } },
+                    { wildcard: { message: { value: '*success*', case_insensitive: true } } },
+                    { wildcard: { message: { value: '*completed successfully*', case_insensitive: true } } }
+                  ],
+                  minimum_should_match: 1
+                }
+              },
+              warning: {
+                bool: {
+                  should: [
+                    { wildcard: { message: { value: '*warning*', case_insensitive: true } } },
+                    { wildcard: { message: { value: '*completed with warning*', case_insensitive: true } } }
+                  ],
+                  minimum_should_match: 1
+                }
+              },
+              failed: {
+                bool: {
+                  should: [
+                    { term: { 'event.outcome': 'failure' } },
+                    { wildcard: { message: { value: '*failed*', case_insensitive: true } } },
+                    { wildcard: { message: { value: '*error*', case_insensitive: true } } }
+                  ],
+                  minimum_should_match: 1
+                }
+              },
+              running: {
+                bool: {
+                  should: [
+                    { wildcard: { message: { value: '*started*', case_insensitive: true } } },
+                    { wildcard: { message: { value: '*running*', case_insensitive: true } } },
+                    { wildcard: { message: { value: '*in progress*', case_insensitive: true } } }
+                  ],
+                  minimum_should_match: 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const recentJobsBody = {
+      size: 20,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: summaryBody.query,
+      _source: [
+        '@timestamp',
+        'message',
+        'event.action',
+        'event.outcome',
+        'service.name',
+        'process.name',
+        'host.name',
+        'source.ip'
+      ]
+    }
+
+    const latestFailureBody = {
+      size: 1,
+      sort: [{ '@timestamp': { order: 'desc' } }],
+      query: {
+        bool: {
+          filter: baseFilter,
+          should: [
+            { term: { 'event.outcome': 'failure' } },
+            { wildcard: { message: { value: '*failed*', case_insensitive: true } } },
+            { wildcard: { message: { value: '*error*', case_insensitive: true } } }
+          ],
+          minimum_should_match: 1,
+          must: [
+            {
+              bool: {
+                should: [
+                  { wildcard: { 'service.name': { value: '*veeam*', case_insensitive: true } } },
+                  { wildcard: { 'process.name': { value: '*veeam*', case_insensitive: true } } },
+                  { wildcard: { message: { value: '*Veeam*', case_insensitive: true } } }
+                ],
+                minimum_should_match: 1
+              }
+            }
+          ]
+        }
+      },
+      _source: ['@timestamp', 'message', 'event.action', 'event.outcome']
+    }
+
+    const [summary, recentJobs, latestFailure] = await Promise.all([
+      this.safeSearch('logs-*,metrics-*', summaryBody),
+      this.safeSearch('logs-*', recentJobsBody),
+      this.safeSearch('logs-*', latestFailureBody)
+    ])
+
+    const buckets = summary?.aggregations?.by_result?.buckets || {}
+
+    const recentRows = (recentJobs?.hits?.hits || []).map((hit: any) => {
+      const src = this.hitSource(hit)
+      return {
+        timestamp: src['@timestamp'],
+        result: this.classifyVeeamResult(src.message, this.pick(src, 'event.action'), this.pick(src, 'event.outcome')),
+        action: this.pick(src, 'event.action'),
+        outcome: this.pick(src, 'event.outcome'),
+        serviceName: this.pick(src, 'service.name') || this.pick(src, 'process.name') || 'Veeam',
+        sourceIp: this.pick(src, 'source.ip'),
+        message: src.message || '-'
+      }
+    })
+
+    const lastRun = recentRows[0] || null
+    const lastSuccess = recentRows.find((row: any) => row.result === 'success') || null
+    const lastFailure = latestFailure?.hits?.hits?.[0]
+      ? (() => {
+          const src = this.hitSource(latestFailure.hits.hits[0])
+          return {
+            timestamp: src['@timestamp'],
+            result: 'failed',
+            action: this.pick(src, 'event.action'),
+            outcome: this.pick(src, 'event.outcome'),
+            message: src.message || '-'
+          }
+        })()
+      : null
+
+    return {
+      kpis: {
+        success24h: buckets.success?.doc_count || 0,
+        warning24h: buckets.warning?.doc_count || 0,
+        failed24h: buckets.failed?.doc_count || 0,
+        running24h: buckets.running?.doc_count || 0
+      },
+      lastRun,
+      lastSuccess,
+      lastFailure,
+      recentJobs: recentRows
+    }
+  }
   async getWindowsSecurity(hostName: string) {
     const summaryBody = {
       size: 0,
@@ -986,6 +1178,12 @@ private async getSqlServiceState(hostName: string, instanceName?: string) {
 
         return String(a.serviceName || '').localeCompare(String(b.serviceName || ''));
       });
+    }
+    const hasVeeam =
+    rows.some((row: any) => row.family === 'veeam')
+
+    if (hasVeeam) {
+      details.veeam = await this.getVeeamOverview(hostName)
     }
 
     return {

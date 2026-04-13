@@ -567,6 +567,11 @@ export default function VmDetailPage() {
 
     const serviceRows = services?.rows || []
     const sqlData = services?.details?.sqlserver || services?.sqlserver || services?.sql || null
+    const veeamData = services?.details?.veeam || services?.veeam || null
+
+    const hasVeeamDetected =
+      Boolean(veeamData) ||
+      serviceRows.some((row) => /veeam/i.test(String(row.serviceName || '')))
 
     const hasSqlDetected =
       Boolean(sqlData) ||
@@ -707,6 +712,85 @@ export default function VmDetailPage() {
               />
             </div>
           </>
+        )}
+
+                {hasVeeamDetected && veeamData && (
+          <>
+            <div className="card cardPad">
+              <div className="sectionTitle">Monitoreo Veeam detectado en esta VM</div>
+              <div className="metricGrid compact">
+                <KpiCard
+                  label="Success 24h"
+                  value={veeamData?.kpis?.success24h ?? '-'}
+                  tone="success"
+                />
+                <KpiCard
+                  label="Warnings 24h"
+                  value={veeamData?.kpis?.warning24h ?? '-'}
+                  tone="warning"
+                />
+                <KpiCard
+                  label="Failures 24h"
+                  value={veeamData?.kpis?.failed24h ?? '-'}
+                  tone="danger"
+                />
+                <KpiCard
+                  label="Runs 24h"
+                  value={veeamData?.kpis?.running24h ?? '-'}
+                  tone="info"
+                />
+              </div>
+            </div>
+
+            <div className="nativeGridTwo">
+              <div className="card cardPad">
+                <div className="sectionTitle">Última actividad de respaldo</div>
+                <DataTable
+                  columns={[
+                    { key: 'timestamp', label: 'Fecha' },
+                    { key: 'result', label: 'Resultado' },
+                    { key: 'action', label: 'Acción' },
+                    { key: 'outcome', label: 'Outcome' },
+                    { key: 'serviceName', label: 'Servicio' },
+                    { key: 'message', label: 'Mensaje' }
+                  ]}
+                  rows={[
+                    veeamData?.lastRun,
+                    veeamData?.lastSuccess,
+                    veeamData?.lastFailure
+                  ].filter(Boolean)}
+                  emptyText="Sin actividad reciente de Veeam."
+                />
+              </div>
+
+              <div className="card cardPad">
+                <div className="sectionTitle">Últimas ejecuciones Veeam</div>
+                <DataTable
+                  columns={[
+                    { key: 'timestamp', label: 'Fecha' },
+                    { key: 'result', label: 'Resultado' },
+                    { key: 'action', label: 'Acción' },
+                    { key: 'outcome', label: 'Outcome' },
+                    { key: 'serviceName', label: 'Servicio' },
+                    { key: 'sourceIp', label: 'IP' },
+                    { key: 'message', label: 'Mensaje' }
+                  ]}
+                  rows={veeamData?.recentJobs || []}
+                  emptyText="Sin eventos recientes de respaldo Veeam."
+                  limit={5}
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {hasVeeamDetected && !veeamData && (
+          <div className="card cardPad">
+            <div className="sectionTitle">Monitoreo Veeam detectado en esta VM</div>
+            <div className="emptyState">
+              Se detectaron servicios Veeam, pero el backend aún no devolvió el detalle enriquecido en `services.details.veeam`.
+            </div>
+          </div>
         )}
 
         {hasSqlDetected && !sqlData && (

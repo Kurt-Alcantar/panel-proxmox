@@ -7,6 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────────────────────────────────────────
+// IDENTIDAD Y ACCESO
+// ─────────────────────────────────────────────────────────────────
+
 model users {
   id              String   @id @default(uuid())
   keycloak_id     String   @unique
@@ -30,6 +34,11 @@ model tenant_groups {
   name       String
   created_at DateTime @default(now())
 }
+
+// ─────────────────────────────────────────────────────────────────
+// DOMINIO A: infraestructura virtualizada (Proxmox)
+// Se mantiene sin cambios para no romper operaciones de VMs
+// ─────────────────────────────────────────────────────────────────
 
 model proxmox_pools {
   id          String @id @default(uuid())
@@ -60,14 +69,111 @@ model vm_inventory {
   kibana_base_url       String?
   monitored_services    String?
   observability_enabled Boolean  @default(true)
+  managed_asset_id      String?  // enlace al activo unificado (Fase 2)
   created_at            DateTime @default(now())
 }
+
+// ─────────────────────────────────────────────────────────────────
+// DOMINIO B: activos monitoreados — fuente de verdad de negocio
+// ─────────────────────────────────────────────────────────────────
+
+model managed_assets {
+  id String @id @default(uuid())
+
+  // Identificadores de Fleet/Elastic — ordenados por estabilidad
+  // fleet_agent_id es el más estable: UUID asignado en enrollment,
+  // sobrevive cambios de hostname y reinstalaciones parciales.
+  fleet_agent_id    String?  @unique  // id del agente en Fleet API
+  elastic_agent_id  String?           // agent.id en documentos Elastic
+  fleet_policy_id   String?
+  fleet_policy_name String?
+
+  // Metadatos del host (pueden cambiar — no son identificadores primarios)
+  host_name         String?
+  host_id           String?           // host.id de Elastic (más estable que host.name)
+  display_name      String?
+  os_type           String?           // windows | linux
+  os_name           String?
+  os_version        String?
+  architecture      String?
+
+  // Red
+  ip_addresses      String[]
+  last_checkin_at   DateTime?
+  agent_status      String?           // online | offline | error | unenrolled
+  agent_version     String?
+
+  // Clasificación
+  asset_type        String   @default("host")   // host | vm | container
+  source            String   @default("fleet")  // fleet | manual | proxmox
+  is_external       Boolean  @default(false)
+
+  // Observabilidad
+  observability_enabled Boolean @default(true)
+  kibana_base_url       String?
+
+  // Enlace opcional a Proxmox
+  proxmox_vmid          Int?
+  proxmox_node          String?
+  proxmox_pool_id       String?
+
+  // Timestamps
+  first_seen_at    DateTime @default(now())
+  last_synced_at   DateTime?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  tenant_assignments asset_tenant_assignments[]
+  tags               asset_tags[]
+  sync_events        asset_sync_events[]
+}
+
+// Asignación de activos a tenant_groups
+// Un activo pertenece a un solo tenant_group máximo
+model asset_tenant_assignments {
+  id              String   @id @default(uuid())
+  asset_id        String
+  tenant_group_id String
+  assigned_by     String?
+  assigned_at     DateTime @default(now())
+
+  asset           managed_assets @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@unique([asset_id])
+}
+
+// Tags internos del activo (independientes de Fleet tags)
+model asset_tags {
+  id       String @id @default(uuid())
+  asset_id String
+  key      String
+  value    String
+
+  asset    managed_assets @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@unique([asset_id, key])
+}
+
+// Log de sincronización
+model asset_sync_events {
+  id         String   @id @default(uuid())
+  asset_id   String?
+  event_type String   // created | synced | status_changed | policy_changed | offline | reconnected
+  payload    Json?
+  created_at DateTime @default(now())
+
+  asset      managed_assets? @relation(fields: [asset_id], references: [id], onDelete: SetNull)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// AUDITORÍA
+// ─────────────────────────────────────────────────────────────────
 
 model audit_logs {
   id         String   @id @default(uuid())
   user_id    String?
   action     String
-  target     String
+  target     String   // "asset:{id}" | "vm:{vmid}" | etc.
   result     String
   created_at DateTime @default(now())
 }

@@ -43,19 +43,37 @@ services:
     environment:
       DATABASE_URL: postgres://panel:panel123@postgres:5432/paneldb
       REDIS_HOST: redis
+
+      # Keycloak
       KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: master
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+
+      # Elastic Stack
       KIBANA_BASE_URL: http://192.168.10.162:5601
       ELASTICSEARCH_URL: https://192.168.10.162:9200
       ELASTICSEARCH_USERNAME: elastic
       ELASTICSEARCH_PASSWORD: "LDV5n*M-HLKf8RrtQGJI"
       ELASTICSEARCH_API_KEY: ""
       ELASTICSEARCH_INSECURE: "true"
+
+      # Fleet (usa la misma URL de Kibana + API key de Elastic)
+      # FLEET_URL se puede dejar vacío para que tome KIBANA_BASE_URL
+      FLEET_URL: ""
+      FLEET_API_KEY: ""
+
+      # Proxmox
+      PROXMOX_URL: https://192.168.10.20:8006/api2/json
+      PROXMOX_TOKEN: "PVEAPIToken=root@pam!krts=7bd7045b-0ca8-4a8a-a477-3b892e5911ee"
+      PROXMOX_NODE: hyperprox
+      PROXMOX_HOST: 192.168.10.20
+
     depends_on:
       - postgres
       - redis
       - keycloak
-    # ports:
-    #   - "3000:3000"
 
   frontend:
     build: ./frontend

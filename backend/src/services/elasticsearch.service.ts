@@ -7,14 +7,14 @@ export class ElasticsearchService {
   private readonly client: AxiosInstance
 
   constructor() {
-    const baseURL = (process.env.ELASTICSEARCH_URL || 'http://192.168.10.162:9200').replace(/\/$/, '')
+    const baseURL = (process.env.ELASTICSEARCH_URL || 'http://localhost:9200').replace(/\/$/, '')
     const insecure = (process.env.ELASTICSEARCH_INSECURE || 'false').toLowerCase() === 'true'
     const username = process.env.ELASTICSEARCH_USERNAME || ''
     const password = process.env.ELASTICSEARCH_PASSWORD || ''
     const apiKey = process.env.ELASTICSEARCH_API_KEY || ''
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     }
 
     if (apiKey) {
@@ -26,7 +26,7 @@ export class ElasticsearchService {
       timeout: 45000,
       auth: !apiKey && username ? { username, password } : undefined,
       headers,
-      httpsAgent: insecure ? new https.Agent({ rejectUnauthorized: false }) : undefined
+      httpsAgent: insecure ? new https.Agent({ rejectUnauthorized: false }) : undefined,
     })
   }
 

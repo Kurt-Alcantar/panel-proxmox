@@ -32,15 +32,19 @@ export default function AppShell({
 
         <div className="sidebarContent">
           <div className="navSection">
-            <Link className={`navItem ${isActive('/usuario') ? 'active' : ''}`} href="/usuario">
-              Mi cuenta
+            <Link className={`navItem ${isActive('/assets') ? 'active' : ''}`} href="/assets">
+              Activos monitoreados
             </Link>
 
             <Link className={`navItem ${isActive('/vms') ? 'active' : ''}`} href="/vms">
-              Mis VMs
+              Infraestructura (VMs)
             </Link>
 
-            <Link className={`navItem  ${isActive('/support') ? 'active' : ''}`} href="/support">
+            <Link className={`navItem ${isActive('/audit') ? 'active' : ''}`} href="/audit">
+              Auditoría
+            </Link>
+
+            <Link className={`navItem ${isActive('/support') ? 'active' : ''}`} href="/support">
               Soporte técnico
             </Link>
           </div>

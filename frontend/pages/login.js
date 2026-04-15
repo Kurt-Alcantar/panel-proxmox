@@ -34,7 +34,7 @@ export default function LoginPage() {
 
       localStorage.setItem('token', data.access_token)
       localStorage.setItem('refresh_token', data.refresh_token || '')
-      router.replace('/vms')
+      router.replace('/assets')
     } catch (err) {
       setError(err.message || 'Error al iniciar sesión')
     } finally {

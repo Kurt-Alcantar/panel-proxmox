@@ -27,8 +27,8 @@ services:
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/paneldb
-      KC_DB_USERNAME: panel
-      KC_DB_PASSWORD: panel123
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak123
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
     depends_on:

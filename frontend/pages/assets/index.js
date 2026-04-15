@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
-import AppShell from '../components/AppShell'
+import AppShell from '../../components/AppShell'
 
 const STATUS_LABELS = {
   online: { label: 'Online', cls: 'running' },

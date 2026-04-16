@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
-import AppShell from '../../../components/AppShell'
+import AppShell from '../../components/AppShell'
 
 const RESULT_COLORS = {
   success: '#22c55e',
@@ -88,29 +88,44 @@ function JobRow({ job, onSelect, selected }) {
   const c = RESULT_COLORS[job.lastResult] || '#6b7280'
   const ts = v => v ? new Date(v).toLocaleString('es-MX') : '—'
   const successRate = job.totalRuns ? Math.round((job.success / job.totalRuns) * 100) : 0
+  const hasIssue = job.lastRootCause && ['failed','warning'].includes(job.lastResult)
   return (
-    <tr
-      onClick={() => onSelect(job)}
-      style={{ borderBottom: '1px solid rgba(59,45,99,0.3)', cursor: 'pointer', background: selected ? 'rgba(139,92,246,0.1)' : 'transparent' }}
-    >
-      <td style={{ padding: '10px 12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0 }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#f3edff' }}>{job.name}</span>
-        </div>
-      </td>
-      <td style={{ padding: '10px 12px' }}><ResultBadge result={job.lastResult} /></td>
-      <td style={{ padding: '10px 12px', fontSize: 12, color: '#b8abd9', whiteSpace: 'nowrap' }}>{ts(job.lastRun)}</td>
-      <td style={{ padding: '10px 12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.07)', borderRadius: 4, height: 6, overflow: 'hidden', minWidth: 60 }}>
-            <div style={{ width: `${successRate}%`, height: '100%', background: successRate > 80 ? '#22c55e' : successRate > 50 ? '#f59e0b' : '#ef4444', borderRadius: 4, transition: 'width 0.5s' }} />
+    <>
+      <tr
+        onClick={() => onSelect(job)}
+        style={{ borderBottom: hasIssue ? 'none' : '1px solid rgba(59,45,99,0.3)', cursor: 'pointer', background: selected ? 'rgba(139,92,246,0.1)' : 'transparent' }}
+      >
+        <td style={{ padding: '10px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#f3edff' }}>{job.name}</span>
           </div>
-          <span style={{ fontSize: 11, color: '#b8abd9', minWidth: 32 }}>{successRate}%</span>
-        </div>
-      </td>
-      <td style={{ padding: '10px 12px', fontSize: 12, color: '#b8abd9', textAlign: 'center' }}>{job.totalRuns}</td>
-    </tr>
+        </td>
+        <td style={{ padding: '10px 12px' }}><ResultBadge result={job.lastResult} /></td>
+        <td style={{ padding: '10px 12px', fontSize: 12, color: '#b8abd9', whiteSpace: 'nowrap' }}>{ts(job.lastRun)}</td>
+        <td style={{ padding: '10px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.07)', borderRadius: 4, height: 6, overflow: 'hidden', minWidth: 60 }}>
+              <div style={{ width: `${successRate}%`, height: '100%', background: successRate > 80 ? '#22c55e' : successRate > 50 ? '#f59e0b' : '#ef4444', borderRadius: 4, transition: 'width 0.5s' }} />
+            </div>
+            <span style={{ fontSize: 11, color: '#b8abd9', minWidth: 32 }}>{successRate}%</span>
+          </div>
+        </td>
+        <td style={{ padding: '10px 12px', fontSize: 12, color: '#b8abd9', textAlign: 'center' }}>{job.totalRuns}</td>
+      </tr>
+      {hasIssue && (
+        <tr style={{ borderBottom: '1px solid rgba(59,45,99,0.3)', background: selected ? 'rgba(139,92,246,0.07)' : 'rgba(239,68,68,0.04)' }}>
+          <td colSpan={5} style={{ padding: '0 12px 10px 28px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <span style={{ fontSize: 11, color: c, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>
+                {job.lastResult === 'failed' ? '⚠ Error:' : '⚡ Advertencia:'}
+              </span>
+              <span style={{ fontSize: 11, color: '#e2d9f3', lineHeight: 1.5 }}>{job.lastRootCause}</span>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -139,13 +154,23 @@ function JobHistoryPanel({ job, history, onClose }) {
             </thead>
             <tbody>
               {history.map((r, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid rgba(59,45,99,0.3)' }}>
-                  <td style={{ padding: '8px 10px', fontSize: 11, color: '#b8abd9', whiteSpace: 'nowrap' }}>{ts(r.timestamp)}</td>
-                  <td style={{ padding: '8px 10px' }}><ResultBadge result={r.result} /></td>
-                  <td style={{ padding: '8px 10px', fontSize: 11, color: '#f3edff', maxWidth: 400 }}>
-                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }} title={r.message}>{r.message || '—'}</span>
-                  </td>
-                </tr>
+                <React.Fragment key={i}>
+                  <tr style={{ borderBottom: r.rootCause && ['failed','warning'].includes(r.result) ? 'none' : '1px solid rgba(59,45,99,0.3)' }}>
+                    <td style={{ padding: '8px 10px', fontSize: 11, color: '#b8abd9', whiteSpace: 'nowrap' }}>{ts(r.timestamp)}</td>
+                    <td style={{ padding: '8px 10px' }}><ResultBadge result={r.result} /></td>
+                    <td style={{ padding: '8px 10px', fontSize: 11, color: '#f3edff', maxWidth: 400 }}>
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }} title={r.message}>{r.summary || r.message || '—'}</span>
+                    </td>
+                  </tr>
+                  {r.rootCause && ['failed','warning'].includes(r.result) && (
+                    <tr style={{ borderBottom: '1px solid rgba(59,45,99,0.3)', background: 'rgba(239,68,68,0.04)' }}>
+                      <td />
+                      <td colSpan={2} style={{ padding: '0 10px 8px' }}>
+                        <span style={{ fontSize: 11, color: RESULT_COLORS[r.result], opacity: 0.9 }}>{r.rootCause}</span>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

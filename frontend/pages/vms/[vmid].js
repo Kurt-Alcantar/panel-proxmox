@@ -6,10 +6,10 @@ const TABS = { overview: 'Resumen', security: 'Seguridad', services: 'Servicios'
 const REFRESH_INTERVALS = { overview: 3000, security: 10000, services: 10000, events: 10000 }
 
 // ─── Utilidades ───────────────────────────────────────────────────
-const fmt = v => v == null || v === '' ? '\u2014' : v
-const ts  = v => v ? new Date(v).toLocaleString('es-MX') : '\u2014'
-const fmtBytes = v => { const n = Number(v||0); if(!n) return '\u2014'; const g = n/1024/1024/1024; return g >= 1 ? `${g.toFixed(1)} GB` : `${(n/1024/1024).toFixed(0)} MB` }
-const fmtPct = v => v == null ? '\u2014' : `${Number(v).toFixed(1)}%`
+const fmt = v => v == null || v === '' ? '—' : v
+const ts  = v => v ? new Date(v).toLocaleString('es-MX') : '—'
+const fmtBytes = v => { const n = Number(v||0); if(!n) return '—'; const g = n/1024/1024/1024; return g >= 1 ? `${g.toFixed(1)} GB` : `${(n/1024/1024).toFixed(0)} MB` }
+const fmtPct = v => v == null ? '—' : `${Number(v).toFixed(1)}%`
 
 // ─── Gauge SVG ────────────────────────────────────────────────────
 function Gauge({ value, label, max = 100 }) {
@@ -27,7 +27,7 @@ function Gauge({ value, label, max = 100 }) {
           strokeDasharray={`${dash} ${circ-dash+circ*0.25}`} strokeLinecap="round"
           transform={`rotate(-225 ${cx} ${cy})`} style={{ transition:'stroke-dasharray 0.6s ease' }} />
         <text x={cx} y={cy-4} textAnchor="middle" fill="#f3edff" fontSize={18} fontWeight={700}>
-          {value == null ? '\u2014' : `${Math.round(value)}%`}
+          {value == null ? '—' : `${Math.round(value)}%`}
         </text>
         <text x={cx} y={cy+14} textAnchor="middle" fill="#b8abd9" fontSize={11}>{label}</text>
       </svg>
@@ -146,11 +146,11 @@ function EventRow({ row }) {
     <tr style={{ borderBottom:'1px solid rgba(59,45,99,0.3)' }}>
       <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9', whiteSpace:'nowrap' }}>{ts(row.timestamp)}</td>
       <td style={{ padding:'8px 10px' }}>
-        <span style={{ background:c+'22', color:c, border:`1px solid ${c}44`, borderRadius:4, padding:'2px 6px', fontSize:11, fontWeight:700 }}>{row.level||'\u2014'}</span>
+        <span style={{ background:c+'22', color:c, border:`1px solid ${c}44`, borderRadius:4, padding:'2px 6px', fontSize:11, fontWeight:700 }}>{row.level||'—'}</span>
       </td>
-      <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9' }}>{row.channel||row.dataset||'\u2014'}</td>
+      <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9' }}>{row.channel||row.dataset||'—'}</td>
       <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff', maxWidth:400 }}>
-        <span title={row.message} style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:380 }}>{row.message||'\u2014'}</span>
+        <span title={row.message} style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:380 }}>{row.message||'—'}</span>
       </td>
     </tr>
   )
@@ -163,8 +163,8 @@ function ProxmoxOnlyPanel({ vm }) {
     { l:'vCPU', v:`${vm.cpu} núcleos` },
     { l:'Memoria asignada', v:fmtBytes(vm.memory) },
     { l:'Disco asignado', v:fmtBytes(vm.disk) },
-    { l:'Pool', v:vm.pool_id||'\u2014' },
-    { l:'Nodo Proxmox', v:vm.node||'\u2014' },
+    { l:'Pool', v:vm.pool_id||'—' },
+    { l:'Nodo Proxmox', v:vm.node||'—' },
     { l:'OS Type', v:vm.os_type||'Desconocido' },
     { l:'VMID', v:vm.vmid },
     { l:'Creada', v:ts(vm.created_at) },
@@ -321,10 +321,10 @@ export default function VmDetailPage() {
   return (
     <AppShell
       title={vm.name}
-      subtitle={`VMID ${vm.vmid} \u00b7 ${vm.node} \u00b7 Pool: ${vm.pool_id||'\u2014'}`}
+      subtitle={`VMID ${vm.vmid} · ${vm.node} · Pool: ${vm.pool_id||'—'}`}
       actions={
         <div style={{ display:'flex', gap:8 }}>
-          <button className="btn btnSecondary" onClick={()=>router.push('/vms')}>\u2190 VMs</button>
+          <button className="btn btnSecondary" onClick={()=>router.push('/vms')}>← VMs</button>
           {hasAgent && vm.os_type==='windows' && (
             <button className="btn btnSecondary"
               style={{ background:'rgba(139,92,246,0.15)', borderColor:'rgba(139,92,246,0.4)', color:'#c4b5fd' }}
@@ -335,7 +335,7 @@ export default function VmDetailPage() {
           {hasAgent && linkedAsset && (
             <button className="btn btnSecondary"
               onClick={()=>router.push(`/assets/${linkedAsset.id}`)}>
-              Ver en Activos \u2197
+              Ver en Activos ↗
             </button>
           )}
           <button className="btn btnPrimary"
@@ -419,7 +419,7 @@ export default function VmDetailPage() {
             {lastRefresh && (
               <span style={{ fontSize:12, color:'#b8abd9', display:'flex', alignItems:'center', gap:5 }}>
                 <span style={{ width:7, height:7, borderRadius:'50%', background:'#22c55e', display:'inline-block', animation:'pulse 2s infinite' }} />
-                {tab==='overview'?'Live 3s':'Live 10s'} \u00b7 {lastRefresh.toLocaleTimeString('es-MX')}
+                {tab==='overview'?'Live 3s':'Live 10s'} · {lastRefresh.toLocaleTimeString('es-MX')}
               </span>
             )}
             {tab==='security' && (
@@ -440,7 +440,7 @@ export default function VmDetailPage() {
               <Gauge value={d.memoryUsedPct} label="Memoria" />
               <Gauge value={d.diskUsedPct} label="Disco" />
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'18px 12px', justifyContent:'center' }}>
-                <div style={{ fontSize:40, fontWeight:800, color:d.errorCount24h>0?'#f59e0b':'#22c55e', lineHeight:1 }}>{d.errorCount24h??'\u2014'}</div>
+                <div style={{ fontSize:40, fontWeight:800, color:d.errorCount24h>0?'#f59e0b':'#22c55e', lineHeight:1 }}>{d.errorCount24h??'—'}</div>
                 <div style={{ fontSize:12, color:'#b8abd9', marginTop:6 }}>Errores 24h</div>
               </div>
             </div>
@@ -451,8 +451,8 @@ export default function VmDetailPage() {
                 { l:'RAM asignada', v:fmtBytes(vm.memory) },
                 { l:'Disco asignado', v:fmtBytes(vm.disk) },
                 { l:'Último check-in', v:ts(linkedAsset?.last_checkin_at) },
-                { l:'Versión agente', v:linkedAsset?.agent_version||'\u2014' },
-                { l:'OS', v:linkedAsset?.os_name||vm.os_type||'\u2014' },
+                { l:'Versión agente', v:linkedAsset?.agent_version||'—' },
+                { l:'OS', v:linkedAsset?.os_name||vm.os_type||'—' },
               ].map(i=>(
                 <div key={i.l}>
                   <div style={{ fontSize:10, color:'#b8abd9', textTransform:'uppercase' }}>{i.l}</div>
@@ -465,8 +465,8 @@ export default function VmDetailPage() {
           {cpuHistory.length > 3 && card(<>
             {secTitle('Tendencia en tiempo real')}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
-              <AreaChart history={cpuHistory} color="#8b5cf6" label={`CPU \u2014 actual: ${fmtPct(d.cpuAvgPct)}`} />
-              <AreaChart history={memHistory} color="#06b6d4" label={`Memoria \u2014 actual: ${fmtPct(d.memoryUsedPct)}`} />
+              <AreaChart history={cpuHistory} color="#8b5cf6" label={`CPU — actual: ${fmtPct(d.cpuAvgPct)}`} />
+              <AreaChart history={memHistory} color="#06b6d4" label={`Memoria — actual: ${fmtPct(d.memoryUsedPct)}`} />
             </div>
           </>, { marginBottom:16 })}
 
@@ -501,7 +501,7 @@ export default function VmDetailPage() {
             ].map(k=>(
               <div key={k.l} style={{ background:'rgba(23,17,41,0.92)', border:`1px solid ${k.c}33`, borderRadius:12, padding:'14px 16px' }}>
                 <div style={{ fontSize:11, color:'#b8abd9', marginBottom:6 }}>{k.l}</div>
-                <div style={{ fontSize:30, fontWeight:800, color:k.c, lineHeight:1 }}>{k.v??'\u2014'}</div>
+                <div style={{ fontSize:30, fontWeight:800, color:k.c, lineHeight:1 }}>{k.v??'—'}</div>
               </div>
             ))}
           </div>
@@ -539,10 +539,10 @@ export default function VmDetailPage() {
                   {d.recentFailed.map((r,i)=>(
                     <tr key={i} style={{ borderBottom:'1px solid rgba(59,45,99,0.3)' }}>
                       <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9', whiteSpace:'nowrap' }}>{ts(r.timestamp)}</td>
-                      <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff', fontWeight:600 }}>{r.user||'\u2014'}</td>
-                      <td style={{ padding:'8px 10px', fontSize:12, color:'#ef4444' }}>{r.sourceIp||'\u2014'}</td>
+                      <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff', fontWeight:600 }}>{r.user||'—'}</td>
+                      <td style={{ padding:'8px 10px', fontSize:12, color:'#ef4444' }}>{r.sourceIp||'—'}</td>
                       <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9', maxWidth:300 }}>
-                        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', display:'block', maxWidth:280 }} title={r.message}>{r.message||'\u2014'}</span>
+                        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', display:'block', maxWidth:280 }} title={r.message}>{r.message||'—'}</span>
                       </td>
                     </tr>
                   ))}
@@ -573,7 +573,7 @@ export default function VmDetailPage() {
         {!loadingTab && d.enabled!==false && tab==='events' && card(<>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
             {secTitle('Eventos recientes')}
-            <span style={{ fontSize:11, color:'#6b7280' }}>24h \u00b7 m\u00e1x 100</span>
+            <span style={{ fontSize:11, color:'#6b7280' }}>24h · m\u00e1x 100</span>
           </div>
           {!(d.rows||[]).length ? <div style={{ color:'#b8abd9', fontSize:13 }}>Sin eventos.</div> : (
             <div style={{ overflowX:'auto' }}>

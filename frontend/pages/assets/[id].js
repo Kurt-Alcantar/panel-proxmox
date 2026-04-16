@@ -150,7 +150,13 @@ export default function AssetDetailPage() {
   const [loadingAsset, setLoadingAsset] = useState(true)
   const [error, setError] = useState('')
   const [showExport, setShowExport] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState(null)
   const loadedTabs = useRef(new Set())
+  const refreshTimer = useRef(null)
+  const isFetching = useRef(false)
+
+  // overview refresca cada 3s, el resto cada 10s (queries más pesadas)
+  const REFRESH_INTERVALS = { overview: 3000, security: 10000, services: 10000, events: 10000 }
 
   const clearSession = useCallback(() => {
     localStorage.removeItem('token'); localStorage.removeItem('refresh_token'); router.replace('/login')
@@ -171,25 +177,56 @@ export default function AssetDetailPage() {
     apiGet(`/api/assets/${id}`).then(data => { setAsset(data); setLoadingAsset(false) }).catch(e => { setError(e.message); setLoadingAsset(false) })
   }, [id, apiGet])
 
-  const loadTab = useCallback(async (t) => {
-    if (!id || loadedTabs.current.has(t)) return
-    setLoadingTab(true)
+  // Fetch silencioso: no muestra spinner, solo actualiza datos en background
+  const fetchTabSilent = useCallback(async (t, assetId) => {
+    if (!assetId || isFetching.current) return
+    isFetching.current = true
     try {
-      const data = await apiGet(`/api/assets/${id}/observability/${t}`)
+      const data = await apiGet(`/api/assets/${assetId}/observability/${t}`)
+      if (data) {
+        setTabData(prev => ({ ...prev, [t]: data }))
+        setLastRefresh(new Date())
+      }
+    } catch (_) {
+      // silencioso: no romper la UI si falla una actualización automática
+    } finally {
+      isFetching.current = false
+    }
+  }, [apiGet])
+
+  // Fetch inicial: muestra spinner solo la primera vez que se carga el tab
+  const loadTab = useCallback(async (t, assetId) => {
+    if (!assetId) return
+    if (!loadedTabs.current.has(t)) setLoadingTab(true)
+    try {
+      const data = await apiGet(`/api/assets/${assetId}/observability/${t}`)
       setTabData(prev => ({ ...prev, [t]: data }))
+      setLastRefresh(new Date())
       loadedTabs.current.add(t)
     } catch (e) {
       setTabData(prev => ({ ...prev, [t]: { enabled: false, reason: e.message } }))
     } finally {
       setLoadingTab(false)
     }
-  }, [id, apiGet])
+  }, [apiGet])
 
+  // Auto-refresh: se reinicia cada vez que cambia el tab o el asset
   useEffect(() => {
-    if (asset) { loadedTabs.current.clear(); loadTab(tab) }
-  }, [asset, tab, loadTab])
+    if (!asset || !id) return
 
-  const handleTabChange = (t) => { setTab(t); loadTab(t) }
+    loadedTabs.current.clear()
+    loadTab(tab, id)
+
+    if (refreshTimer.current) clearInterval(refreshTimer.current)
+    const interval = REFRESH_INTERVALS[tab] || 5000
+    refreshTimer.current = setInterval(() => fetchTabSilent(tab, id), interval)
+
+    return () => {
+      if (refreshTimer.current) clearInterval(refreshTimer.current)
+    }
+  }, [asset?.id, tab, id])
+
+  const handleTabChange = (t) => { setTab(t) }
 
   if (loadingAsset) return <AppShell title="Cargando..."><div className="card cardPad"><p className="muted">Cargando activo...</p></div></AppShell>
   if (!asset) return <AppShell title="No encontrado"><div className="card cardPad"><div className="errorBox">Activo no encontrado o sin acceso.</div></div></AppShell>
@@ -231,16 +268,27 @@ export default function AssetDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="tabBar">
+      <div className="tabBar" style={{ alignItems: 'center' }}>
         {Object.entries(TABS).map(([k, v]) => (
           <button key={k} className={`tabBtn ${tab === k ? 'active' : ''}`} onClick={() => handleTabChange(k)}>{v}</button>
         ))}
-        {tab === 'security' && asset.observability_enabled && (
-          <button className="btn btnSecondary" style={{ marginLeft: 'auto' }} onClick={() => setShowExport(true)}>
-            Exportar PDF
-          </button>
-        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          {lastRefresh && (
+            <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block', animation: 'pulse 2s infinite' }} />
+              {tab === 'overview' ? 'Live 3s' : 'Live 10s'}
+              &nbsp;·&nbsp;
+              {lastRefresh.toLocaleTimeString('es-MX')}
+            </span>
+          )}
+          {tab === 'security' && asset.observability_enabled && (
+            <button className="btn btnSecondary" onClick={() => setShowExport(true)}>
+              Exportar PDF
+            </button>
+          )}
+        </div>
       </div>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }`}</style>
 
       {showExport && (
         <ExportModal

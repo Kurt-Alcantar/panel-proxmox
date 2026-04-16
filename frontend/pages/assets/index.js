@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
-import AppShell from '../../components/AppShell'
+import AppShell from '../components/AppShell'
 
 const STATUS_LABELS = {
   online: { label: 'Online', cls: 'running' },
@@ -14,19 +14,12 @@ function StatusBadge({ status }) {
   return <span className={`vm-status ${s.cls}`}>{s.label}</span>
 }
 
-function OsBadge({ osType }) {
-  if (!osType) return <span className="vmTag">—</span>
-  return <span className="vmTag">{osType === 'windows' ? '🪟 Windows' : '🐧 Linux'}</span>
-}
-
 export default function AssetsPage() {
   const router = useRouter()
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState('ALL')
-  const [filterOs, setFilterOs] = useState('ALL')
 
   const clearSession = useCallback(() => {
     localStorage.removeItem('token')
@@ -69,18 +62,14 @@ export default function AssetsPage() {
   }), [assets])
 
   const filtered = useMemo(() => {
+    if (!search) return assets
+    const q = search.toLowerCase()
     return assets.filter(a => {
-      if (filterStatus !== 'ALL' && a.agent_status !== filterStatus) return false
-      if (filterOs !== 'ALL' && a.os_type !== filterOs) return false
-      if (search) {
-        const q = search.toLowerCase()
-        const name = (a.display_name || a.host_name || '').toLowerCase()
-        const policy = (a.fleet_policy_name || '').toLowerCase()
-        if (!name.includes(q) && !policy.includes(q)) return false
-      }
-      return true
+      const name = (a.display_name || a.host_name || '').toLowerCase()
+      const policy = (a.fleet_policy_name || '').toLowerCase()
+      return name.includes(q) || policy.includes(q)
     })
-  }, [assets, filterStatus, filterOs, search])
+  }, [assets, search])
 
   return (
     <AppShell
@@ -110,29 +99,6 @@ export default function AssetsPage() {
         ))}
       </div>
 
-      {/* Filtros */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-        {['ALL', 'online', 'offline', 'error'].map(s => (
-          <button
-            key={s}
-            className={`poolChip ${filterStatus === s ? 'active' : ''}`}
-            onClick={() => setFilterStatus(s)}
-          >
-            {s === 'ALL' ? 'Todos' : s.charAt(0).toUpperCase() + s.slice(1)}
-          </button>
-        ))}
-        <div style={{ width: 1, background: 'var(--border)', margin: '0 4px' }} />
-        {['ALL', 'windows', 'linux'].map(o => (
-          <button
-            key={o}
-            className={`poolChip ${filterOs === o ? 'active' : ''}`}
-            onClick={() => setFilterOs(o)}
-          >
-            {o === 'ALL' ? 'Todos OS' : o === 'windows' ? '🪟 Windows' : '🐧 Linux'}
-          </button>
-        ))}
-      </div>
-
       {error && <div className="errorBox" style={{ marginBottom: 16 }}>{error}</div>}
 
       {loading ? (
@@ -154,7 +120,6 @@ export default function AssetsPage() {
                     {asset.display_name || asset.host_name || `Agent ${asset.fleet_agent_id?.slice(0, 8) || '—'}`}
                   </button>
                   <div className="vmCardTags" style={{ marginTop: 8 }}>
-                    <OsBadge osType={asset.os_type} />
                     {asset.is_external && <span className="vmTag" style={{ color: 'var(--info)', borderColor: 'rgba(56,189,248,0.3)' }}>Externo</span>}
                     {asset.fleet_policy_name && <span className="vmTag">{asset.fleet_policy_name}</span>}
                   </div>

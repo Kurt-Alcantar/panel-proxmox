@@ -15,16 +15,22 @@ model users {
   id              String   @id @default(uuid())
   keycloak_id     String   @unique
   email           String
-  tenant_group_id String?
+  tenant_id       String?  // tenant al que pertenece el usuario
+  tenant_group_id String?  // sub-grupo dentro del tenant
   created_at      DateTime @default(now())
 }
 
 model tenants {
-  id         String   @id @default(uuid())
-  code       String   @unique
-  name       String
-  status     String
-  created_at DateTime @default(now())
+  id               String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  status           String
+  type             String   @default("client") // platform | partner | client
+  parent_tenant_id String?
+  created_at       DateTime @default(now())
+
+  parent           tenants?  @relation("TenantHierarchy", fields: [parent_tenant_id], references: [id])
+  children         tenants[] @relation("TenantHierarchy")
 }
 
 model tenant_groups {
@@ -128,12 +134,14 @@ model managed_assets {
   sync_events        asset_sync_events[]
 }
 
-// Asignación de activos a tenant_groups
-// Un activo pertenece a un solo tenant_group máximo
+// Asignación de activos a tenants
+// Un activo pertenece a un solo tenant (cliente final)
+// La visibilidad para partners se hereda via parent_tenant_id
 model asset_tenant_assignments {
   id              String   @id @default(uuid())
   asset_id        String
-  tenant_group_id String
+  tenant_id       String?  // tenant cliente propietario del activo
+  tenant_group_id String?  // sub-grupo opcional dentro del tenant
   assigned_by     String?
   assigned_at     DateTime @default(now())
 

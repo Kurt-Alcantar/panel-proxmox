@@ -190,7 +190,7 @@ export class AdminAssetsController {
       fleetAgentId: body.fleetAgentId,
       osType: body.osType,
       isExternal: body.isExternal ?? false,
-      tenantGroupId: body.tenantGroupId,
+      tenantId: body.tenantId,
     })
     await this.audit.log({ userId: admin.user.id, action: 'admin.create_asset', target: `asset:${asset.id}`, result: 'success' })
     return asset
@@ -213,16 +213,16 @@ export class AdminAssetsController {
   @Put(':id/assign')
   async assign(@Req() req: any, @Param('id') id: string, @Body() body: any) {
     const admin = await this.requireAdmin(req.user?.sub)
-    if (!body?.tenantGroupId) throw new BadRequestException('tenantGroupId es requerido')
-    const result = await this.assets.assignToTenantGroup(id, body.tenantGroupId, admin.user.id)
-    await this.audit.log({ userId: admin.user.id, action: 'admin.assign_asset', target: `asset:${id}`, result: `tenant_group:${body.tenantGroupId}` })
+    if (!body?.tenantId) throw new BadRequestException('tenantId es requerido')
+    const result = await this.assets.assignToTenant(id, body.tenantId, admin.user.id)
+    await this.audit.log({ userId: admin.user.id, action: 'admin.assign_asset', target: `asset:${id}`, result: `tenant:${body.tenantId}` })
     return result
   }
 
   @Delete(':id/assign')
   async unassign(@Req() req: any, @Param('id') id: string) {
     const admin = await this.requireAdmin(req.user?.sub)
-    await this.assets.removeFromTenantGroup(id)
+    await this.assets.removeFromTenant(id)
     await this.audit.log({ userId: admin.user.id, action: 'admin.unassign_asset', target: `asset:${id}`, result: 'success' })
     return { ok: true }
   }

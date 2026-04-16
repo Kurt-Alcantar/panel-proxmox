@@ -60,6 +60,24 @@ async function bootstrap() {
   const port = parseInt(process.env.PORT || '3000', 10)
   await app.listen(port)
   console.log(`Backend corriendo en puerto ${port}`)
+
+  // Auto-sync Fleet cada 5 minutos
+  const syncJob = app.get(FleetSyncJob)
+  const syncInterval = parseInt(process.env.FLEET_SYNC_INTERVAL_MS || '300000', 10)
+
+  const runSync = async () => {
+    try {
+      const result = await syncJob.run()
+      console.log(`Fleet auto-sync: +${result.created} creados, ~${result.updated} actualizados`)
+    } catch (e: any) {
+      console.error(`Fleet auto-sync error: ${e.message}`)
+    }
+  }
+
+  // Primera ejecución al arrancar (espera 30s para que todo esté listo)
+  setTimeout(runSync, 30000)
+  // Ejecuciones periódicas
+  setInterval(runSync, syncInterval)
 }
 
 bootstrap()

@@ -22,7 +22,7 @@ function Gauge({ value, label, max = 100 }) {
           transform={`rotate(-225 ${cx} ${cy})`}
           style={{ transition:'stroke-dasharray 0.6s ease' }} />
         <text x={cx} y={cy-4} textAnchor="middle" fill="#f3edff" fontSize={18} fontWeight={700}>
-          {value == null ? '\u2014' : `${Math.round(value)}%`}
+          {value == null ? '—' : `${Math.round(value)}%`}
         </text>
         <text x={cx} y={cy+14} textAnchor="middle" fill="#b8abd9" fontSize={11}>{label}</text>
       </svg>
@@ -147,16 +147,16 @@ function ServiceCard({ service }) {
 function EventRow({ row }) {
   const lc = { error:'#ef4444', critical:'#dc2626', fatal:'#b91c1c', warning:'#f59e0b', info:'#38bdf8', debug:'#6b7280' }
   const c = lc[row.level?.toLowerCase()] || '#b8abd9'
-  const ts = v => v ? new Date(v).toLocaleString('es-MX') : '\u2014'
+  const ts = v => v ? new Date(v).toLocaleString('es-MX') : '—'
   return (
     <tr style={{ borderBottom:'1px solid rgba(59,45,99,0.3)' }}>
       <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9', whiteSpace:'nowrap' }}>{ts(row.timestamp)}</td>
       <td style={{ padding:'8px 10px' }}>
-        <span style={{ background:c+'22', color:c, border:`1px solid ${c}44`, borderRadius:4, padding:'2px 6px', fontSize:11, fontWeight:700 }}>{row.level || '\u2014'}</span>
+        <span style={{ background:c+'22', color:c, border:`1px solid ${c}44`, borderRadius:4, padding:'2px 6px', fontSize:11, fontWeight:700 }}>{row.level || '—'}</span>
       </td>
-      <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9' }}>{row.channel || row.dataset || '\u2014'}</td>
+      <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9' }}>{row.channel || row.dataset || '—'}</td>
       <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff', maxWidth:400 }}>
-        <span title={row.message} style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:380 }}>{row.message || '\u2014'}</span>
+        <span title={row.message} style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:380 }}>{row.message || '—'}</span>
       </td>
     </tr>
   )
@@ -293,7 +293,7 @@ export default function AssetDetailPage() {
     return () => { if (refreshTimer.current) clearInterval(refreshTimer.current) }
   }, [asset?.id, tab, id])
 
-  const ts = v => v ? new Date(v).toLocaleString('es-MX') : '\u2014'
+  const ts = v => v ? new Date(v).toLocaleString('es-MX') : '—'
   const sc = { online:'#22c55e', offline:'#ef4444', error:'#f59e0b' }
 
   if (loadingAsset) return <AppShell title="Cargando..."><div className="card cardPad"><p className="muted">Cargando activo...</p></div></AppShell>
@@ -311,17 +311,17 @@ export default function AssetDetailPage() {
   return (
     <AppShell
       title={asset.display_name || asset.host_name || 'Activo'}
-      subtitle={`${asset.os_name || asset.os_type || 'OS desconocido'} \u00b7 ${asset.agent_version || ''}`}
+      subtitle={`${asset.os_name || asset.os_type || 'OS desconocido'} · ${asset.agent_version || ''}`}
       actions={
         <div style={{ display:'flex', gap:8 }}>
-          <button className="btn btnSecondary" onClick={()=>router.push('/assets')}>\Activos</button>
+          <button className="btn btnSecondary" onClick={()=>router.push('/assets')}>← Activos</button>
           {asset.os_type === 'windows' && (
             <button className="btn btnSecondary" style={{ background:'rgba(139,92,246,0.15)', borderColor:'rgba(139,92,246,0.4)', color:'#c4b5fd' }}
-              onClick={() => router.push(`/assets/${id}/veeam`)}>
-              Veeam Jobs
+              onClick={() => router.push('/assets/' + asset.id + '/veeam')}>
+              🛡 Veeam Jobs
             </button>
           )}
-          {asset.kibana_base_url && <a className="btn btnSecondary" href={asset.kibana_base_url} target="_blank" rel="noreferrer">Kibana \u2197</a>}
+          {asset.kibana_base_url && <a className="btn btnSecondary" href={asset.kibana_base_url} target="_blank" rel="noreferrer">Kibana ↗</a>}
         </div>
       }
     >
@@ -342,7 +342,7 @@ export default function AssetDetailPage() {
             <span style={{ background:statusColor+'22', color:statusColor, border:`1px solid ${statusColor}44`, borderRadius:999, padding:'2px 10px', fontSize:12, fontWeight:700 }}>{asset.agent_status}</span>
           </div>
           <div style={{ display:'flex', gap:20, flexWrap:'wrap', marginLeft:'auto' }}>
-            {[{l:'OS',v:asset.os_name||asset.os_type||'\u2014'},{l:'Agente',v:asset.agent_version||'\u2014'},{l:'Check-in',v:ts(asset.last_checkin_at)}].map(i=>(
+            {[{l:'OS',v:asset.os_name||asset.os_type||'—'},{l:'Agente',v:asset.agent_version||'—'},{l:'Check-in',v:ts(asset.last_checkin_at)}].map(i=>(
               <div key={i.l} style={{ textAlign:'right' }}>
                 <div style={{ fontSize:10, color:'#b8abd9', textTransform:'uppercase', letterSpacing:'0.06em' }}>{i.l}</div>
                 <div style={{ fontSize:13, fontWeight:600, color:'#f3edff' }}>{i.v}</div>
@@ -362,7 +362,7 @@ export default function AssetDetailPage() {
           {lastRefresh && (
             <span style={{ fontSize:12, color:'#b8abd9', display:'flex', alignItems:'center', gap:5 }}>
               <span style={{ width:7, height:7, borderRadius:'50%', background:'#22c55e', display:'inline-block', animation:'pulse 2s infinite' }} />
-              {tab==='overview'?'Live 3s':'Live 10s'} \u00b7 {lastRefresh.toLocaleTimeString('es-MX')}
+              {tab==='overview'?'Live 3s':'Live 10s'} · {lastRefresh.toLocaleTimeString('es-MX')}
             </span>
           )}
           {tab==='security' && <button className="btn btnSecondary" style={{ fontSize:12, padding:'6px 12px' }} onClick={()=>setShowExport(true)}>Exportar PDF</button>}
@@ -382,7 +382,7 @@ export default function AssetDetailPage() {
             <Gauge value={d.memoryUsedPct} label="Memoria" />
             <Gauge value={d.diskUsedPct} label="Disco" />
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'18px 12px', justifyContent:'center' }}>
-              <div style={{ fontSize:40, fontWeight:800, color:d.errorCount24h>0?'#f59e0b':'#22c55e', lineHeight:1 }}>{d.errorCount24h??'\u2014'}</div>
+              <div style={{ fontSize:40, fontWeight:800, color:d.errorCount24h>0?'#f59e0b':'#22c55e', lineHeight:1 }}>{d.errorCount24h??'—'}</div>
               <div style={{ fontSize:12, color:'#b8abd9', marginTop:6 }}>Errores 24h</div>
             </div>
           </div>
@@ -391,8 +391,8 @@ export default function AssetDetailPage() {
         {cpuHistory.length > 3 && card(<>
           {secTitle('Tendencia en tiempo real')}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
-            <AreaChart history={cpuHistory} color="#8b5cf6" label={`CPU \u2014 actual: ${d.cpuAvgPct??'\u2014'}%`} />
-            <AreaChart history={memHistory} color="#06b6d4" label={`Memoria \u2014 actual: ${d.memoryUsedPct??'\u2014'}%`} />
+            <AreaChart history={cpuHistory} color="#8b5cf6" label={`CPU — actual: ${d.cpuAvgPct??'—'}%`} />
+            <AreaChart history={memHistory} color="#06b6d4" label={`Memoria — actual: ${d.memoryUsedPct??'—'}%`} />
           </div>
         </>, { marginBottom:16 })}
 
@@ -427,7 +427,7 @@ export default function AssetDetailPage() {
           ].map(k=>(
             <div key={k.l} style={{ background:'rgba(23,17,41,0.92)', border:`1px solid ${k.c}33`, borderRadius:12, padding:'14px 16px' }}>
               <div style={{ fontSize:11, color:'#b8abd9', marginBottom:6 }}>{k.l}</div>
-              <div style={{ fontSize:30, fontWeight:800, color:k.c, lineHeight:1 }}>{k.v??'\u2014'}</div>
+              <div style={{ fontSize:30, fontWeight:800, color:k.c, lineHeight:1 }}>{k.v??'—'}</div>
             </div>
           ))}
         </div>
@@ -468,10 +468,10 @@ export default function AssetDetailPage() {
                 {d.recentFailed.map((r,i)=>(
                   <tr key={i} style={{ borderBottom:'1px solid rgba(59,45,99,0.3)' }}>
                     <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9', whiteSpace:'nowrap' }}>{ts(r.timestamp)}</td>
-                    <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff', fontWeight:600 }}>{r.user||'\u2014'}</td>
-                    <td style={{ padding:'8px 10px', fontSize:12, color:'#ef4444' }}>{r.sourceIp||'\u2014'}</td>
+                    <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff', fontWeight:600 }}>{r.user||'—'}</td>
+                    <td style={{ padding:'8px 10px', fontSize:12, color:'#ef4444' }}>{r.sourceIp||'—'}</td>
                     <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9', maxWidth:300 }}>
-                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', display:'block', maxWidth:280 }} title={r.message}>{r.message||'\u2014'}</span>
+                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', display:'block', maxWidth:280 }} title={r.message}>{r.message||'—'}</span>
                     </td>
                   </tr>
                 ))}
@@ -483,7 +483,7 @@ export default function AssetDetailPage() {
 
       {/* SERVICES */}
       {!loadingTab && d.enabled!==false && tab==='services' && (<>
-        {!d.rows?.length ? card(<div className="emptyState">Sin servicios detectados en las \u00faltimas 24h.</div>) : (<>
+        {!d.rows?.length ? card(<div className="emptyState">Sin servicios detectados en las últimas 24h.</div>) : (<>
           {d.detectedFamilies?.length>0 && card(<>
             {secTitle('Familias detectadas')}
             <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
@@ -496,7 +496,7 @@ export default function AssetDetailPage() {
             {d.rows.map((svc,i)=><ServiceCard key={i} service={svc} />)}
           </div>
           {d.details?.veeam && card(<>
-            {secTitle('Veeam \u2014 \u00daltimas 24h')}
+            {secTitle('Veeam — Últimas 24h')}
             <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:16 }}>
               {[{l:'Exitosos',v:d.details.veeam.kpis?.success24h,c:'#22c55e'},{l:'Advertencias',v:d.details.veeam.kpis?.warning24h,c:'#f59e0b'},{l:'Fallidos',v:d.details.veeam.kpis?.failed24h,c:'#ef4444'},{l:'En progreso',v:d.details.veeam.kpis?.running24h,c:'#38bdf8'}].map(k=>(
                 <div key={k.l} style={{ background:`${k.c}15`, border:`1px solid ${k.c}33`, borderRadius:10, padding:'10px 16px', textAlign:'center', minWidth:90 }}>
@@ -516,8 +516,8 @@ export default function AssetDetailPage() {
                         <tr key={i} style={{ borderBottom:'1px solid rgba(59,45,99,0.3)' }}>
                           <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9', whiteSpace:'nowrap' }}>{ts(job.timestamp)}</td>
                           <td style={{ padding:'8px 10px' }}><span style={{ background:rc+'22', color:rc, border:`1px solid ${rc}44`, borderRadius:4, padding:'2px 8px', fontSize:11, fontWeight:700 }}>{job.result}</span></td>
-                          <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff' }}>{job.serviceName||'\u2014'}</td>
-                          <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9' }}><span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', display:'block', maxWidth:260 }} title={job.message}>{job.message||'\u2014'}</span></td>
+                          <td style={{ padding:'8px 10px', fontSize:12, color:'#f3edff' }}>{job.serviceName||'—'}</td>
+                          <td style={{ padding:'8px 10px', fontSize:11, color:'#b8abd9' }}><span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', display:'block', maxWidth:260 }} title={job.message}>{job.message||'—'}</span></td>
                         </tr>
                       )
                     })}
@@ -533,7 +533,7 @@ export default function AssetDetailPage() {
       {!loadingTab && d.enabled!==false && tab==='events' && card(<>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
           {secTitle('Eventos recientes')}
-          <span style={{ fontSize:11, color:'#6b7280' }}>24h \u00b7 m\u00e1x 100</span>
+          <span style={{ fontSize:11, color:'#6b7280' }}>24h · máx 100</span>
         </div>
         {!(d.rows||[]).length ? <div style={{ color:'#b8abd9', fontSize:13 }}>Sin eventos recientes.</div> : (
           <div style={{ overflowX:'auto' }}>

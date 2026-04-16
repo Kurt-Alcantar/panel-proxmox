@@ -315,6 +315,12 @@ export default function AssetDetailPage() {
       actions={
         <div style={{ display:'flex', gap:8 }}>
           <button className="btn btnSecondary" onClick={()=>router.push('/assets')}>\u2190 Activos</button>
+          {asset.os_type === 'windows' && (
+            <button className="btn btnSecondary" style={{ background:'rgba(139,92,246,0.15)', borderColor:'rgba(139,92,246,0.4)', color:'#c4b5fd' }}
+              onClick={() => router.push(`/assets/${id}/veeam`)}>
+              Veeam Jobs
+            </button>
+          )}
           {asset.kibana_base_url && <a className="btn btnSecondary" href={asset.kibana_base_url} target="_blank" rel="noreferrer">Kibana \u2197</a>}
         </div>
       }

@@ -19,6 +19,8 @@ import { AssetsService } from './services/assets.service'
 import { FleetService } from './services/fleet.service'
 import { FleetSyncJob } from './services/fleet-sync.job'
 import { ProxmoxService } from './services/proxmox.service'
+import { VeeamJobsService } from './services/veeam-jobs.service'
+import { VeeamController } from './controllers/veeam.controller'
 import { KeycloakAdminService } from './services/keycloak-admin.service'
 
 @Module({
@@ -27,6 +29,7 @@ import { KeycloakAdminService } from './services/keycloak-admin.service'
     AssetsController,
     AdminAssetsController,
     FleetController,
+    VeeamController,
     // Dominio A: infraestructura + capa compat /vms/*
     InfrastructureController,
     // Auth y Admin sin cambios
@@ -42,6 +45,7 @@ import { KeycloakAdminService } from './services/keycloak-admin.service'
     AssetsService,
     FleetService,
     FleetSyncJob,
+    VeeamJobsService,
     ProxmoxService,
     KeycloakAdminService,
   ],

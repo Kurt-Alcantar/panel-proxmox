@@ -314,7 +314,7 @@ export default function AssetDetailPage() {
       subtitle={`${asset.os_name || asset.os_type || 'OS desconocido'} \u00b7 ${asset.agent_version || ''}`}
       actions={
         <div style={{ display:'flex', gap:8 }}>
-          <button className="btn btnSecondary" onClick={()=>router.push('/assets')}>\u2190 Activos</button>
+          <button className="btn btnSecondary" onClick={()=>router.push('/assets')}>\Activos</button>
           {asset.os_type === 'windows' && (
             <button className="btn btnSecondary" style={{ background:'rgba(139,92,246,0.15)', borderColor:'rgba(139,92,246,0.4)', color:'#c4b5fd' }}
               onClick={() => router.push(`/assets/${id}/veeam`)}>

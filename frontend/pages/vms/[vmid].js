@@ -332,12 +332,6 @@ export default function VmDetailPage() {
               Veeam Jobs
             </button>
           )}
-          {hasAgent && linkedAsset && (
-            <button className="btn btnSecondary"
-              onClick={()=>router.push(`/assets/${linkedAsset.id}`)}>
-              Ver en Activos ↗
-            </button>
-          )}
           <button className="btn btnPrimary"
             onClick={async()=>{
               const res = await fetch(`/api/vms/${vmid}/console`,{ method:'POST', headers:{ Authorization:`Bearer ${localStorage.getItem('token')}` } })

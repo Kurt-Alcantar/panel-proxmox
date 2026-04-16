@@ -12,8 +12,8 @@ datasource db {
 // ─────────────────────────────────────────────────────────────────
 
 model users {
-  id              String   @id @default(uuid())
-  keycloak_id     String   @unique
+  id              String   @id @default(uuid()) @db.Uuid
+  keycloak_id     String   @unique @db.Uuid
   email           String
   tenant_id       String?  // tenant al que pertenece el usuario
   tenant_group_id String?  // sub-grupo dentro del tenant
@@ -184,4 +184,21 @@ model audit_logs {
   target     String   // "asset:{id}" | "vm:{vmid}" | etc.
   result     String
   created_at DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ROLES Y PERMISOS
+// ─────────────────────────────────────────────────────────────────
+
+model roles {
+  id   String @id @db.Uuid
+  code String @unique
+}
+
+model user_roles {
+  id      String @id @db.Uuid
+  user_id String @db.Uuid
+  role_id String @db.Uuid
+
+  @@unique([user_id, role_id])
 }

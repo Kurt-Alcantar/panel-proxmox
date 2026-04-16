@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
-import AppShell from '../../components/AppShell'
+import AppShell from '../../../components/AppShell'
 
 const RESULT_COLORS = {
   success: '#22c55e',

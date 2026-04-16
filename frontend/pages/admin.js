@@ -173,6 +173,8 @@ const emptyTenantForm = {
   code: '',
   name: '',
   status: 'ACTIVE',
+  type: 'client',
+  parent_tenant_id: '',
 }
 
 const emptyTenantGroupForm = {
@@ -189,6 +191,7 @@ const emptyUserForm = {
   firstName: '',
   lastName: '',
   password: '',
+  tenant_id: '',
   tenant_group_id: '',
   role_ids: [],
   enabled: true,
@@ -225,6 +228,7 @@ export default function AdminPage() {
   const [tenantGroupForm, setTenantGroupForm] = useState(emptyTenantGroupForm)
   const [userForm, setUserForm] = useState(emptyUserForm)
 
+  const [assets, setAssets] = useState([])
   const [vmSearch, setVmSearch] = useState('')
   const [selectedVmId, setSelectedVmId] = useState('')
   const [vmForm, setVmForm] = useState(emptyVmForm)
@@ -323,8 +327,12 @@ export default function AdminPage() {
     setLoading(true)
 
     try {
-      const bootstrap = await request('/api/admin/bootstrap')
+      const [bootstrap, assetList] = await Promise.all([
+        request('/api/admin/bootstrap'),
+        request('/api/admin/assets').catch(() => []),
+      ])
       setData(bootstrap || emptyBootstrap)
+      setAssets(Array.isArray(assetList) ? assetList : [])
 
       const nextTenantGroups = bootstrap?.tenantGroups || []
       const nextVms = bootstrap?.vms || []
@@ -457,6 +465,8 @@ export default function AdminPage() {
       code: tenantForm.code,
       name: tenantForm.name,
       status: tenantForm.status,
+      type: tenantForm.type,
+      parent_tenant_id: tenantForm.parent_tenant_id || null,
     }
 
     const path = tenantForm.id ? `/api/admin/tenants/${tenantForm.id}` : '/api/admin/tenants'
@@ -515,6 +525,7 @@ export default function AdminPage() {
       firstName: userForm.firstName,
       lastName: userForm.lastName,
       password: userForm.password,
+      tenant_id: userForm.tenant_id || null,
       tenant_group_id: userForm.tenant_group_id || null,
       role_ids: userForm.role_ids,
       enabled: userForm.enabled,
@@ -540,6 +551,7 @@ export default function AdminPage() {
       firstName: user.first_name || '',
       lastName: user.last_name || '',
       password: '',
+      tenant_id: user.tenant_id || '',
       tenant_group_id: user.tenant_group?.id || '',
       role_ids: (user.roles || []).map((role) => role.id),
       enabled: user.enabled !== false,
@@ -684,6 +696,32 @@ export default function AdminPage() {
                 </select>
               </Field>
 
+              <Field label="Tipo">
+                <select
+                  style={inputStyle}
+                  value={tenantForm.type}
+                  onChange={(e) => setTenantForm({ ...tenantForm, type: e.target.value, parent_tenant_id: '' })}
+                >
+                  <option value="partner">Partner (ej. Conestra)</option>
+                  <option value="client">Cliente final (ej. G-One)</option>
+                </select>
+              </Field>
+
+              {tenantForm.type === 'client' && (
+                <Field label="Partner padre">
+                  <select
+                    style={inputStyle}
+                    value={tenantForm.parent_tenant_id}
+                    onChange={(e) => setTenantForm({ ...tenantForm, parent_tenant_id: e.target.value })}
+                  >
+                    <option value="">Selecciona el partner</option>
+                    {tenantOptions.filter(t => t.type === 'partner' || t.type === 'platform').map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button style={buttonStyle} disabled={busy || loading}>
                   {tenantForm.id ? 'Guardar cambios' : 'Crear tenant'}
@@ -806,6 +844,21 @@ export default function AdminPage() {
               />
             </Field>
 
+            <Field label="Tenant (para visibilidad)">
+              <select
+                style={inputStyle}
+                value={userForm.tenant_id}
+                onChange={(e) => setUserForm({ ...userForm, tenant_id: e.target.value })}
+              >
+                <option value="">Sin tenant</option>
+                {tenantOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.type||'client'})
+                  </option>
+                ))}
+              </select>
+            </Field>
+
             <Field label="Tenant group">
               <select
                 style={inputStyle}
@@ -874,6 +927,7 @@ export default function AdminPage() {
                   <tr>
                     <th style={tableHeadCellStyle}>Code</th>
                     <th style={tableHeadCellStyle}>Nombre</th>
+                    <th style={tableHeadCellStyle}>Tipo</th>
                     <th style={tableHeadCellStyle}>Status</th>
                     <th style={tableHeadCellStyle}>Acciones</th>
                   </tr>
@@ -883,6 +937,11 @@ export default function AdminPage() {
                     <tr key={tenant.id}>
                       <td style={{ ...tableCellStyle, fontWeight: 700 }}>{tenant.code}</td>
                       <td style={tableCellStyle}>{tenant.name}</td>
+                      <td style={tableCellStyle}>
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:999, background: tenant.type==='platform'?'rgba(139,92,246,0.2)':tenant.type==='partner'?'rgba(59,130,246,0.2)':'rgba(34,197,94,0.2)', color: tenant.type==='platform'?'#c4b5fd':tenant.type==='partner'?'#93c5fd':'#86efac' }}>
+                          {tenant.type||'client'}
+                        </span>
+                      </td>
                       <td style={tableCellStyle}>{tenant.status}</td>
                       <td style={tableCellStyle}>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -895,6 +954,8 @@ export default function AdminPage() {
                                 code: tenant.code,
                                 name: tenant.name,
                                 status: tenant.status || 'ACTIVE',
+                                type: tenant.type || 'client',
+                                parent_tenant_id: tenant.parent_tenant_id || '',
                               })
                             }
                           >
@@ -1044,7 +1105,7 @@ export default function AdminPage() {
                 <thead>
                   <tr>
                     <th style={tableHeadCellStyle}>Usuario</th>
-                    <th style={tableHeadCellStyle}>Tenant group</th>
+                    <th style={tableHeadCellStyle}>Tenant</th>
                     <th style={tableHeadCellStyle}>Roles</th>
                     <th style={tableHeadCellStyle}>Acciones</th>
                   </tr>
@@ -1057,7 +1118,12 @@ export default function AdminPage() {
                         <div style={{ color: theme.muted, fontSize: 12 }}>{user.keycloak_id}</div>
                       </td>
                       <td style={tableCellStyle}>
-                        {user.tenant_group ? `${user.tenant_group.name} (${user.tenant_group.code})` : 'Sin asignar'}
+                        {user.tenant_name ? (
+                          <div>
+                            <div style={{ fontWeight:600 }}>{user.tenant_name}</div>
+                            <div style={{ fontSize:11, color:'#b8abd9' }}>{user.tenant_type}</div>
+                          </div>
+                        ) : 'Sin asignar'}
                       </td>
                       <td style={tableCellStyle}>
                         {(user.roles || []).map((role) => role.code).join(', ') || 'Sin roles'}
@@ -1088,6 +1154,86 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+
+
+        <div style={cardStyle}>
+          <SectionTitle
+            title="Asignar activos a clientes"
+            subtitle="Define qué activos monitoreados pertenecen a cada cliente final."
+          />
+          <div style={{ overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={tableHeadCellStyle}>Activo</th>
+                  <th style={tableHeadCellStyle}>OS</th>
+                  <th style={tableHeadCellStyle}>Status agente</th>
+                  <th style={tableHeadCellStyle}>Cliente asignado</th>
+                  <th style={tableHeadCellStyle}>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assets.map((asset) => {
+                  const assignment = asset.tenant_assignments?.[0]
+                  const assignedTenant = assignment?.tenant_id
+                    ? tenantOptions.find(t => t.id === assignment.tenant_id)
+                    : null
+                  return (
+                    <tr key={asset.id}>
+                      <td style={tableCellStyle}>
+                        <div style={{ fontWeight: 700 }}>{asset.display_name || asset.host_name}</div>
+                        <div style={{ fontSize: 11, color: '#b8abd9' }}>{asset.agent_version}</div>
+                      </td>
+                      <td style={tableCellStyle}>{asset.os_type || '—'}</td>
+                      <td style={tableCellStyle}>
+                        <span style={{ color: asset.agent_status === 'online' ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+                          {asset.agent_status || '—'}
+                        </span>
+                      </td>
+                      <td style={tableCellStyle}>
+                        <select
+                          style={{ ...inputStyle, width: 200 }}
+                          value={assignment?.tenant_id || ''}
+                          onChange={async (e) => {
+                            const tenantId = e.target.value
+                            try {
+                              if (tenantId) {
+                                await request(`/api/admin/assets/${asset.id}/assign`, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ tenantId }),
+                                })
+                              } else {
+                                await request(`/api/admin/assets/${asset.id}/assign`, { method: 'DELETE' })
+                              }
+                              const updated = await request('/api/admin/assets').catch(() => [])
+                              setAssets(Array.isArray(updated) ? updated : [])
+                              setSuccess('Asignación guardada')
+                            } catch (err) {
+                              setError(err.message || 'Error al asignar')
+                            }
+                          }}
+                        >
+                          <option value="">Sin asignar</option>
+                          {tenantOptions.filter(t => t.type === 'client').map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={tableCellStyle}>
+                        {assignedTenant && (
+                          <span style={{ fontSize: 11, color: '#86efac' }}>✓ {assignedTenant.name}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {!assets.length && (
+                  <tr><td colSpan={5} style={tableCellStyle}>Sin activos</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 

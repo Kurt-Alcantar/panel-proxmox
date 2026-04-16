@@ -551,7 +551,7 @@ export default function AdminPage() {
       firstName: user.first_name || '',
       lastName: user.last_name || '',
       password: '',
-      tenant_id: user.tenant_id || '',
+      tenant_id: user.tenant_id || user.tenant?.id || '',
       tenant_group_id: user.tenant_group?.id || '',
       role_ids: (user.roles || []).map((role) => role.id),
       enabled: user.enabled !== false,

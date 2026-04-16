@@ -15,7 +15,6 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { AuthGuard } from '../guards/auth.guard';
-import { AssetsService } from '../services/assets.service';
 import { AuditService } from '../services/audit.service';
 import { KeycloakAdminService } from '../services/keycloak-admin.service';
 import { PrismaService } from '../services/prisma.service';
@@ -35,8 +34,7 @@ export class AdminController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly proxmox: ProxmoxService,
-    private readonly keycloakAdmin: KeycloakAdminService,
-    private readonly assetsService: AssetsService,
+    private readonly keycloakAdmin: KeycloakAdminService
   ) {}
 
   private isUuid(value?: string) {
@@ -118,11 +116,17 @@ export class AdminController {
 
     return users.map((user) => {
       const group = user.tenant_group_id ? groupById.get(user.tenant_group_id) : null;
-      const tenant = group?.tenant_id ? tenantById.get(group.tenant_id) : null;
+      // Prioridad: tenant_id directo del usuario, luego via tenant_group
+      const directTenant = (user as any).tenant_id ? tenantById.get((user as any).tenant_id) : null;
+      const groupTenant = group?.tenant_id ? tenantById.get(group.tenant_id) : null;
+      const tenant = directTenant || groupTenant;
 
       return {
         ...user,
         roles: rolesByUserId.get(user.id) || [],
+        tenant_id: (user as any).tenant_id || null,
+        tenant_name: tenant?.name || null,
+        tenant_type: (tenant as any)?.type || null,
         tenant_group: group
           ? {
               id: group.id,
@@ -135,6 +139,7 @@ export class AdminController {
               id: tenant.id,
               code: tenant.code,
               name: tenant.name,
+              type: (tenant as any).type || null,
             }
           : null,
       };
@@ -304,19 +309,9 @@ export class AdminController {
     const code = String(body?.code || '').trim();
     const name = String(body?.name || '').trim();
     const status = String(body?.status || 'ACTIVE').trim();
-    const type = String(body?.type || 'client').trim(); // platform | partner | client
-    const parentTenantId = this.toNullableString(body?.parent_tenant_id);
 
     if (!code || !name) {
       throw new BadRequestException('code y name son obligatorios');
-    }
-
-    if (!['platform', 'partner', 'client'].includes(type)) {
-      throw new BadRequestException('type debe ser platform, partner o client');
-    }
-
-    if (type === 'client' && !parentTenantId) {
-      throw new BadRequestException('Un tenant de tipo client debe tener parent_tenant_id');
     }
 
     const existing = await this.prisma.tenants.findFirst({ where: { code } });
@@ -324,13 +319,8 @@ export class AdminController {
       throw new BadRequestException('Ya existe un tenant con ese code');
     }
 
-    if (parentTenantId) {
-      const parent = await this.prisma.tenants.findFirst({ where: { id: parentTenantId } });
-      if (!parent) throw new BadRequestException('El tenant padre no existe');
-    }
-
     const tenant = await this.prisma.tenants.create({
-      data: { code, name, status, type, parent_tenant_id: parentTenantId ?? null },
+      data: { code, name, status },
     });
 
     await this.audit.log({
@@ -517,7 +507,6 @@ export class AdminController {
     const firstName = String(body?.firstName || '').trim();
     const lastName = String(body?.lastName || '').trim();
     const tenantGroupId = this.toNullableString(body?.tenant_group_id);
-    const tenantId = this.toNullableString(body?.tenant_id);
     const roleIds = Array.isArray(body?.role_ids) ? body.role_ids.map((value: any) => String(value)) : [];
 
     if (!username || !email || !password) {
@@ -588,7 +577,6 @@ export class AdminController {
 
     const email = this.toNullableString(body?.email);
     const tenantGroupId = this.toNullableString(body?.tenant_group_id);
-    const tenantId = this.toNullableString(body?.tenant_id);
     const username = this.toNullableString(body?.username);
     const firstName = this.toNullableString(body?.firstName);
     const lastName = this.toNullableString(body?.lastName);
@@ -759,54 +747,6 @@ export class AdminController {
     await this.audit.log({ userId: admin.user.id, action: 'admin.delete_vm', target: String(numericVmid), result: 'success' });
     return { ok: true };
   }
-
-  @Get('tenants/tree')
-  async getTenantTree(@Req() req: AuthenticatedRequest) {
-    await this.getAdminContext(req.user?.sub);
-    const all = await this.prisma.tenants.findMany({ orderBy: { name: 'asc' } });
-    const platform = all.filter(t => (t as any).type === 'platform');
-    const partners  = all.filter(t => (t as any).type === 'partner');
-    const clients   = all.filter(t => (t as any).type === 'client');
-    return platform.map(p => ({
-      ...p,
-      partners: partners.map(pt => ({
-        ...pt,
-        clients: clients.filter(c => (c as any).parent_tenant_id === pt.id),
-      })),
-      directClients: clients.filter(c => (c as any).parent_tenant_id === p.id),
-    }));
-  }
-
-  // ─── Asignación de activos a tenants ─────────────────────────────
-
-  @Get('assets')
-  async listAllAssets(@Req() req: AuthenticatedRequest) {
-    await this.getAdminContext(req.user?.sub);
-    return this.assetsService.listAll();
-  }
-
-  @Post('assets/:id/assign')
-  async assignAsset(
-    @Param('id') id: string,
-    @Body() body: { tenantId: string },
-    @Req() req: AuthenticatedRequest,
-  ) {
-    const admin = await this.getAdminContext(req.user?.sub);
-    if (!body.tenantId) throw new BadRequestException('tenantId requerido');
-    const result = await this.assetsService.assignToTenant(id, body.tenantId, admin.user.id);
-    await this.audit.log({ userId: admin.user.id, action: 'admin.assign_asset', target: id, result: 'success' });
-    return result;
-  }
-
-  @Delete('assets/:id/assign')
-  async unassignAsset(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const admin = await this.getAdminContext(req.user?.sub);
-    const result = await this.assetsService.removeFromTenant(id);
-    await this.audit.log({ userId: admin.user.id, action: 'admin.unassign_asset', target: id, result: 'success' });
-    return result;
-  }
-
-  // ─── Usuarios: agregar tenant_id al crear/actualizar ─────────────
 
   @Post('pools/sync')
   async syncPools(@Req() req: AuthenticatedRequest) {

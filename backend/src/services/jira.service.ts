@@ -98,7 +98,7 @@ export class JiraService {
     if (status) clauses.push(`status = "${String(status).replace(/"/g, '\\"')}"`)
     if (search) clauses.push(`(summary ~ "${String(search).replace(/"/g, '\\"')}" OR text ~ "${String(search).replace(/"/g, '\\"')}")`)
     const jql = `${clauses.join(' AND ')} ORDER BY updated DESC`
-    const data: any = await this.request('POST', '/rest/api/3/search', {
+    const data: any = await this.request('POST', '/rest/api/3/search/jql', {
       jql,
       maxResults: 50,
       fields: [

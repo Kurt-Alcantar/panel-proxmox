@@ -4,6 +4,60 @@ import { apiJson } from '../lib/auth'
 
 const EMPTY_FORM = { title: '', priority: 'Medium', issueTypeName: '', description: '', labels: '' }
 
+const PRIORITY_COLOR = {
+  Highest: 'var(--red)',
+  High: 'var(--red)',
+  Medium: 'var(--amber)',
+  Low: 'var(--green)',
+  Lowest: 'var(--green)',
+}
+
+const STATUS_COLOR = {
+  'To Do': 'var(--text-3)',
+  'In Progress': 'var(--cyan)',
+  'Done': 'var(--green)',
+}
+
+const STATUS_BG = {
+  'To Do': 'oklch(0.33 0.011 248)',
+  'In Progress': 'var(--cyan-dim)',
+  'Done': 'var(--green-dim)',
+}
+
+function PriorityDot({ priority }) {
+  return (
+    <span style={{
+      display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+      background: PRIORITY_COLOR[priority] || 'var(--text-4)', flexShrink: 0,
+    }} />
+  )
+}
+
+function StatusBadge({ status }) {
+  const c = STATUS_COLOR[status] || 'var(--text-3)'
+  const bg = STATUS_BG[status] || 'oklch(0.33 0.011 248)'
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-sm)',
+      background: bg, color: c, letterSpacing: '0.03em', whiteSpace: 'nowrap',
+    }}>
+      {status || 'Unknown'}
+    </span>
+  )
+}
+
+function Label({ text }) {
+  return (
+    <span style={{
+      fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)',
+      background: 'var(--surface-3)', color: 'var(--text-3)',
+      border: '1px solid var(--border-soft)', whiteSpace: 'nowrap',
+    }}>
+      {text}
+    </span>
+  )
+}
+
 export default function SupportPage() {
   const [tickets, setTickets] = useState([])
   const [meta, setMeta] = useState({ issueTypes: [], projectKey: 'CM', configured: false })
@@ -16,6 +70,9 @@ export default function SupportPage() {
   const [search, setSearch] = useState('')
   const [refreshTick, setRefreshTick] = useState(0)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [showCreate, setShowCreate] = useState(false)
+  const [transitioning, setTransitioning] = useState(false)
+  const [addingComment, setAddingComment] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -45,7 +102,6 @@ export default function SupportPage() {
       }
     }
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, refreshTick])
 
   const filtered = useMemo(() => {
@@ -85,6 +141,7 @@ export default function SupportPage() {
       })
       setForm(EMPTY_FORM)
       setDetail(created)
+      setShowCreate(false)
       reload()
       window.dispatchEvent(new Event('hyperox:tickets-updated'))
     } catch (e) {
@@ -95,7 +152,8 @@ export default function SupportPage() {
   }
 
   const moveTicket = async (transitionId) => {
-    if (!detail?.key || !transitionId) return
+    if (!detail?.key || !transitionId || transitioning) return
+    setTransitioning(true)
     setError('')
     try {
       const updated = await apiJson(`/api/support/tickets/${detail.key}/status`, {
@@ -108,12 +166,15 @@ export default function SupportPage() {
       window.dispatchEvent(new Event('hyperox:tickets-updated'))
     } catch (e) {
       setError(e.message || 'No se pudo mover el ticket')
+    } finally {
+      setTransitioning(false)
     }
   }
 
   const addComment = async (e) => {
     e.preventDefault()
-    if (!detail?.key || !comment.trim()) return
+    if (!detail?.key || !comment.trim() || addingComment) return
+    setAddingComment(true)
     setError('')
     try {
       const updated = await apiJson(`/api/support/tickets/${detail.key}/comment`, {
@@ -126,96 +187,281 @@ export default function SupportPage() {
       reload()
     } catch (e) {
       setError(e.message || 'No se pudo agregar comentario')
+    } finally {
+      setAddingComment(false)
     }
   }
+
+  const ts = (v) => v ? new Date(v).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : ''
 
   return (
     <AppShell
       title="Support tickets"
-      subtitle={meta.configured ? `Integrado con Jira Cloud · proyecto ${meta.projectKey}` : 'Configura Jira en backend para habilitar soporte real.'}
+      subtitle={meta.configured ? `Jira Cloud · ${meta.projectKey}` : 'Configura Jira en backend.'}
       actions={
-        <div className="overview-toolbar">
-          <button className={`chip ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>All</button>
-          <button className={`chip ${statusFilter === 'To Do' ? 'active' : ''}`} onClick={() => setStatusFilter('To Do')}>To do</button>
-          <button className={`chip ${statusFilter === 'In Progress' ? 'active' : ''}`} onClick={() => setStatusFilter('In Progress')}>In progress</button>
-          <button className={`chip ${statusFilter === 'Done' ? 'active' : ''}`} onClick={() => setStatusFilter('Done')}>Done</button>
-          <button className="btn btn-ghost btn-sm" onClick={reload}>Refresh</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 'var(--r-md)', padding: 2, gap: 2 }}>
+            {[['all', 'All'], ['To Do', 'To do'], ['In Progress', 'In progress'], ['Done', 'Done']].map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setStatusFilter(val)}
+                style={{
+                  padding: '5px 12px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                  borderRadius: 'var(--r-sm)', transition: 'all 0.15s',
+                  background: statusFilter === val ? 'var(--surface-3)' : 'transparent',
+                  color: statusFilter === val ? 'var(--text)' : 'var(--text-3)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button onClick={reload} style={{ padding: '5px 10px', fontSize: 12, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', color: 'var(--text-2)', cursor: 'pointer' }}>
+            Refresh
+          </button>
+          <button onClick={() => setShowCreate(v => !v)} style={{ padding: '6px 14px', fontSize: 12, fontWeight: 700, background: 'var(--cyan)', border: 'none', borderRadius: 'var(--r-sm)', color: '#fff', cursor: 'pointer' }}>
+            + Nuevo ticket
+          </button>
         </div>
       }
       searchValue={search}
       onSearchChange={setSearch}
-      searchPlaceholder="Search Jira tickets..."
+      searchPlaceholder="Buscar tickets..."
     >
-      <div className="overview-bottom-grid" style={{ alignItems: 'start', gridTemplateColumns: '1.05fr 1.2fr 1.15fr' }}>
-        <section className="card overview-list-card cardPad">
-          <div className="sectionHeader"><div><h2 className="sectionTitle">Nuevo ticket</h2><p className="sectionSub">Alta directa en Jira.</p></div></div>
-          <form className="adminFormGrid" onSubmit={createTicket}>
-            <label className="authField"><span>Título</span><input className="authInput" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
-            <label className="authField"><span>Prioridad</span><select className="authInput" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option>Highest</option><option>High</option><option>Medium</option><option>Low</option><option>Lowest</option></select></label>
-            <label className="authField"><span>Issue type</span><select className="authInput" value={form.issueTypeName} onChange={(e) => setForm({ ...form, issueTypeName: e.target.value })}><option value="">Default project issue type</option>{meta.issueTypes.map((type) => <option value={type.name} key={type.id}>{type.name}</option>)}</select></label>
-            <label className="authField"><span>Labels</span><input className="authInput" placeholder="source-elastic, sev-critical" value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} /></label>
-            <label className="authField" style={{ gridColumn: '1 / -1' }}><span>Descripción</span><textarea className="authInput" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="6" /></label>
-            <div><button className="btn btn-primary" type="submit" disabled={creating || !meta.configured}>{creating ? 'Creando...' : 'Crear ticket'}</button></div>
-          </form>
-          {!meta.configured && <div className="emptyState" style={{ marginTop: 12 }}>Falta configurar JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN y JIRA_PROJECT_KEY en el backend.</div>}
-          {error && <div className="emptyState" style={{ marginTop: 12, color: 'var(--danger)' }}>{error}</div>}
-        </section>
+      <style>{`
+        .st-layout { display: grid; grid-template-columns: 1fr 1.6fr; gap: 16px; align-items: start; }
+        .st-ticket { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); cursor: pointer; transition: background 0.12s; }
+        .st-ticket:hover { background: var(--surface-2); }
+        .st-ticket.active { background: var(--surface-2); border-left: 2px solid var(--cyan); }
+        .st-ticket:last-child { border-bottom: none; }
+        .st-comment { padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+        .st-comment:last-child { border-bottom: none; }
+        .st-input { width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; font-size: 13px; color: var(--text); outline: none; box-sizing: border-box; }
+        .st-input:focus { border-color: var(--cyan-deep); }
+        .st-label { font-size: 12px; color: var(--text-3); display: block; margin-bottom: 4px; }
+        .st-section { font-size: 11px; font-weight: 700; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.08em; padding: 10px 0 6px; }
+        @media (max-width: 768px) { .st-layout { grid-template-columns: 1fr; } }
+      `}</style>
 
-        <section className="card overview-list-card">
-          <div className="overview-card-head compact"><h3>Tickets</h3><span className="ch-meta">{filtered.length} items</span></div>
-          <div className="overview-list-wrap">
-            {loading ? <div className="emptyState">Cargando tickets...</div> : filtered.map(ticket => (
-              <button className="alert-row" key={ticket.key} onClick={() => openDetail(ticket.key)} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 0 }}>
-                <span className={`alert-accent ${/done/i.test(ticket.status) ? 'ok' : /progress/i.test(ticket.status) ? 'warning' : 'critical'}`} />
-                <div style={{ flex: 1 }}>
-                  <div className="alert-title">{ticket.key} · {ticket.title}</div>
-                  <div className="alert-meta">{ticket.issueType} · {ticket.priority} · {ticket.status}</div>
-                  <div className="muted" style={{ marginTop: 6 }}>{ticket.assignee?.displayName || 'Unassigned'} · updated {new Date(ticket.updatedAt).toLocaleString()}</div>
-                </div>
-              </button>
-            ))}
-            {!loading && filtered.length === 0 && <div className="emptyState">Sin tickets para ese filtro.</div>}
+      {error && (
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13, color: 'var(--red)', marginBottom: 14 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Modal crear ticket */}
+      {showCreate && (
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', padding: '20px 22px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Nuevo ticket</div>
+            <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
           </div>
-        </section>
+          <form onSubmit={createTicket}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label className="st-label">Título *</label>
+                <input className="st-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required placeholder="Resumen del issue..." />
+              </div>
+              <div>
+                <label className="st-label">Prioridad</label>
+                <select className="st-input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+                  {['Highest','High','Medium','Low','Lowest'].map(p => <option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="st-label">Issue type</label>
+                <select className="st-input" value={form.issueTypeName} onChange={(e) => setForm({ ...form, issueTypeName: e.target.value })}>
+                  <option value="">Default</option>
+                  {meta.issueTypes.map((t) => <option value={t.name} key={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="st-label">Labels</label>
+                <input className="st-input" placeholder="tag1, tag2" value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label className="st-label">Descripción</label>
+                <textarea className="st-input" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Detalla el problema..." style={{ resize: 'vertical' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="submit" disabled={creating || !meta.configured} style={{ padding: '7px 18px', background: 'var(--cyan)', border: 'none', borderRadius: 'var(--r-sm)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                {creating ? 'Creando...' : 'Crear ticket'}
+              </button>
+              <button type="button" onClick={() => setShowCreate(false)} style={{ padding: '7px 14px', background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', color: 'var(--text-2)', fontSize: 13, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
-        <section className="card overview-list-card cardPad">
-          <div className="sectionHeader"><div><h2 className="sectionTitle">Detalle</h2><p className="sectionSub">Transiciones y comentarios del issue.</p></div></div>
-          {!detail ? <div className="emptyState">Selecciona un ticket.</div> : (
+      <div className="st-layout">
+        {/* Lista de tickets */}
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Tickets</span>
+            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>{filtered.length} resultados</span>
+          </div>
+          <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
+            {loading && <div style={{ padding: 20, color: 'var(--text-3)', fontSize: 13, textAlign: 'center' }}>Cargando...</div>}
+            {!loading && filtered.length === 0 && <div style={{ padding: 20, color: 'var(--text-4)', fontSize: 13, textAlign: 'center' }}>Sin tickets para ese filtro.</div>}
+            {!loading && filtered.map(ticket => (
+              <div
+                key={ticket.key}
+                className={`st-ticket ${detail?.key === ticket.key ? 'active' : ''}`}
+                onClick={() => openDetail(ticket.key)}
+              >
+                <PriorityDot priority={ticket.priority} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)', fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{ticket.key}</span>
+                    <StatusBadge status={ticket.status} />
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500, lineHeight: 1.4, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ticket.title}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-4)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <span>{ticket.assignee?.displayName || 'Sin asignar'}</span>
+                    <span>·</span>
+                    <span>{ts(ticket.updatedAt)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Panel de detalle */}
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
+          {!detail ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🎫</div>
+              Selecciona un ticket para ver el detalle
+            </div>
+          ) : (
             <>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div className="alert-title">{detail.key} · {detail.title}</div>
-                <div className="alert-meta">{detail.issueType} · {detail.priority} · {detail.status}</div>
-                <div className="muted">Assignee: {detail.assignee?.displayName || 'Unassigned'}</div>
-                {detail.labels?.length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{detail.labels.map((label) => <span className="chip" key={label}>{label}</span>)}</div>}
-                {detail.description && <div className="emptyState" style={{ textAlign: 'left', whiteSpace: 'pre-wrap' }}>{detail.description}</div>}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {(detail.transitions || []).map((transition) => (
-                    <button key={transition.id} className="btn btn-secondary btn-sm" onClick={() => moveTicket(transition.id)}>{transition.name}</button>
+              {/* Header del ticket */}
+              <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>{detail.key}</span>
+                      <StatusBadge status={detail.status} />
+                      <span style={{ fontSize: 11, color: 'var(--text-4)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <PriorityDot priority={detail.priority} /> {detail.priority}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 }}>{detail.title}</div>
+                  </div>
+                  <a href={detail.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--cyan)', textDecoration: 'none', whiteSpace: 'nowrap', padding: '4px 8px', border: '1px solid var(--cyan-deep)', borderRadius: 'var(--r-sm)' }}>
+                    Ver en Jira ↗
+                  </a>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {detail.labels?.map((l) => <Label key={l} text={l} />)}
+                </div>
+              </div>
+
+              {/* Info rápida */}
+              <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>Asignado a</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{detail.assignee?.displayName || '—'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>Reportado por</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{detail.reporter?.displayName || '—'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>Tipo</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{detail.issueType || '—'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>Actualizado</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{ts(detail.updatedAt)}</div>
+                </div>
+              </div>
+
+              {/* Descripción */}
+              {detail.description && (
+                <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)' }}>
+                  <div className="st-section">Descripción</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-2)', whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 200, overflowY: 'auto' }}>
+                    {detail.description}
+                  </div>
+                </div>
+              )}
+
+              {/* Transiciones */}
+              {detail.transitions?.length > 0 && (
+                <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)' }}>
+                  <div className="st-section">Mover a</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {detail.transitions.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => moveTicket(t.id)}
+                        disabled={transitioning}
+                        style={{
+                          padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
+                          borderRadius: 'var(--r-sm)', transition: 'all 0.15s',
+                          background: t.category === 'Done' ? 'var(--green-dim)' : t.category === 'In Progress' ? 'var(--cyan-dim)' : 'var(--surface-3)',
+                          color: t.category === 'Done' ? 'var(--green)' : t.category === 'In Progress' ? 'var(--cyan)' : 'var(--text-2)',
+                        }}
+                      >
+                        {transitioning ? '...' : t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Comentarios */}
+              <div style={{ padding: '0 18px 12px' }}>
+                <div className="st-section">Comentarios ({detail.comments?.length || 0})</div>
+                <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                  {(!detail.comments || detail.comments.length === 0) && (
+                    <div style={{ fontSize: 13, color: 'var(--text-4)', padding: '8px 0' }}>Sin comentarios aún.</div>
+                  )}
+                  {(detail.comments || []).map((item) => (
+                    <div key={item.id} className="st-comment">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>{item.author}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{ts(item.createdAt)}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text-3)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{item.bodyText}</div>
+                    </div>
                   ))}
                 </div>
+
+                {/* Agregar comentario */}
+                <form onSubmit={addComment} style={{ marginTop: 12 }}>
+                  <textarea
+                    className="st-input"
+                    rows={3}
+                    placeholder="Escribe un comentario..."
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    style={{ resize: 'none', marginBottom: 8 }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={addingComment || !comment.trim()}
+                    style={{
+                      padding: '6px 14px', fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer',
+                      borderRadius: 'var(--r-sm)', background: comment.trim() ? 'var(--cyan)' : 'var(--surface-3)',
+                      color: comment.trim() ? '#fff' : 'var(--text-4)',
+                    }}
+                  >
+                    {addingComment ? 'Enviando...' : 'Comentar'}
+                  </button>
+                </form>
               </div>
-              <div className="sectionHeader" style={{ marginTop: 16 }}><div><h2 className="sectionTitle">Comentarios</h2></div></div>
-              <div className="overview-list-wrap" style={{ maxHeight: 280 }}>
-                {(detail.comments || []).map((item) => (
-                  <div key={item.id} className="alert-row">
-                    <span className="alert-accent info" />
-                    <div style={{ flex: 1 }}>
-                      <div className="alert-title">{item.author}</div>
-                      <div className="alert-meta">{new Date(item.createdAt).toLocaleString()}</div>
-                      <div className="muted" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{item.bodyText}</div>
-                    </div>
-                  </div>
-                ))}
-                {(detail.comments || []).length === 0 && <div className="emptyState">Sin comentarios.</div>}
-              </div>
-              <form onSubmit={addComment} className="adminFormGrid" style={{ marginTop: 14 }}>
-                <label className="authField" style={{ gridColumn: '1 / -1' }}><span>Nuevo comentario</span><textarea className="authInput" rows="4" value={comment} onChange={(e) => setComment(e.target.value)} /></label>
-                <div><button className="btn btn-primary btn-sm" type="submit">Agregar comentario</button></div>
-                <a className="btn btn-ghost btn-sm" href={detail.url} target="_blank" rel="noreferrer">Open in Jira</a>
-              </form>
             </>
           )}
-        </section>
+        </div>
       </div>
     </AppShell>
   )

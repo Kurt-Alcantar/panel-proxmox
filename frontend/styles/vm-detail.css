@@ -1,13 +1,11 @@
 /* ==========================================================================
-   Detalle de VM y observabilidad
-   Usado principalmente por: pages/vms/[vmid].js
-   Responsabilidad: KPIs, tabs, info grids, mini barras y chips de servicios
+   Detalle de VM y observabilidad — tokens v2
    ========================================================================== */
 
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(180px, 1fr));
-  gap: 16px;
+  gap: 14px;
   margin-bottom: 20px;
 }
 
@@ -15,36 +13,28 @@
   grid-template-columns: repeat(4, minmax(160px, 1fr));
 }
 
-.metricCard {
-  padding: 18px;
-}
+.metricCard { padding: 16px 18px; }
 
 .metricTitle {
-  color: var(--muted);
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
   margin-bottom: 10px;
 }
 
 .metricValue {
   font-size: 24px;
   font-weight: 700;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
 }
 
-.tone-success {
-  border-color: rgba(34, 197, 94, 0.35);
-}
-
-.tone-danger {
-  border-color: rgba(220, 38, 38, 0.35);
-}
-
-.tone-warning {
-  border-color: rgba(245, 158, 11, 0.35);
-}
-
-.tone-info {
-  border-color: rgba(56, 189, 248, 0.35);
-}
+.tone-success { border-color: oklch(0.78 0.16 155 / 0.4); }
+.tone-danger  { border-color: oklch(0.68 0.19 25 / 0.4); }
+.tone-warning { border-color: oklch(0.78 0.16 80 / 0.4); }
+.tone-info    { border-color: oklch(0.78 0.16 210 / 0.4); }
 
 .detailHeader {
   display: flex;
@@ -54,33 +44,41 @@
   margin-bottom: 20px;
 }
 
-.detailMeta {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+.detailMeta { display: flex; gap: 10px; flex-wrap: wrap; }
 
+/* Tabs */
 .tabBar {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   flex-wrap: wrap;
   margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 0;
 }
 
 .tabBtn {
-  border: 1px solid var(--border);
-  background: rgba(23, 17, 41, 0.92);
-  color: var(--text);
-  padding: 11px 14px;
-  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  padding: 8px 14px;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
   cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
 }
+
+.tabBtn:hover { background: var(--surface-1); color: var(--text); }
 
 .tabBtn.active {
-  background: rgba(139, 92, 246, 0.18);
-  border-color: rgba(139, 92, 246, 0.4);
+  background: var(--surface-1);
+  border-color: var(--border);
+  border-bottom-color: var(--surface-1);
+  color: var(--text);
+  margin-bottom: -1px;
 }
 
+/* Info grids */
 .infoGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -88,29 +86,29 @@
   margin-bottom: 20px;
 }
 
-.compactInfoGrid {
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
-}
+.compactInfoGrid { grid-template-columns: repeat(4, minmax(180px, 1fr)); }
 
 .infoItem {
-  background: rgba(23, 17, 41, 0.92);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
 }
 
 .infoLabel {
-  color: var(--muted);
-  font-size: 12px;
-  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
+  color: var(--text-4);
+  margin-bottom: 5px;
 }
 
 .infoValue {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   word-break: break-word;
+  color: var(--text);
 }
 
 .nativeGridTwo {
@@ -120,37 +118,27 @@
   margin-bottom: 20px;
 }
 
-.serviceChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
-}
+/* Service chips */
+.serviceChips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 
 .serviceChip {
   display: inline-flex;
-  padding: 8px 12px;
+  padding: 5px 12px;
   border-radius: 999px;
-  background: rgba(139, 92, 246, 0.14);
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  color: #ddd6fe;
-  font-size: 13px;
-  font-weight: 700;
+  background: var(--cyan-dim);
+  border: 1px solid oklch(0.74 0.16 295 / 0.35);
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
 }
 
-.mutedChip {
-  opacity: 0.7;
-}
+.mutedChip { opacity: 0.6; }
 
-.miniBarList {
-  display: grid;
-  gap: 12px;
-}
+/* Mini bar list */
+.miniBarList { display: grid; gap: 12px; }
 
-.miniBarRow {
-  display: grid;
-  gap: 6px;
-}
+.miniBarRow { display: grid; gap: 6px; }
 
 .miniBarTop {
   display: flex;
@@ -159,6 +147,7 @@
 }
 
 .miniBarLabel {
+  font-size: 12px;
   color: var(--text);
   max-width: 75%;
   overflow: hidden;
@@ -167,29 +156,37 @@
 }
 
 .miniBarCount {
-  color: var(--muted);
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 600;
 }
 
 .miniBarTrack {
   width: 100%;
-  height: 10px;
+  height: 6px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--surface-3);
   overflow: hidden;
 }
 
 .miniBarFill {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+  background: linear-gradient(90deg, var(--cyan-deep), var(--cyan));
   border-radius: 999px;
 }
 
-.summaryActions {
-  margin-top: 16px;
-}
+.summaryActions { margin-top: 16px; }
 
 .portal-info {
-  color: var(--muted);
+  color: var(--text-3);
   padding: 20px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
+
+/* muted text helper */
+.muted { color: var(--text-3); }
+
+/* cardPad compat */
+.cardPad { padding: 18px 20px; }

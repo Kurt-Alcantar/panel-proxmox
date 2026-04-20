@@ -1,213 +1,193 @@
 /* ==========================================================================
-   Autenticación
-   Usado principalmente por: pages/login.js
-   Responsabilidad: header, panel y footer del login
+   Auth — Login page con tokens v2
    ========================================================================== */
 
 .authPage {
   min-height: 100vh;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(139, 92, 246, 0.18), transparent 26%),
-    radial-gradient(circle at 80% 30%, rgba(56, 189, 248, 0.08), transparent 22%),
-    radial-gradient(circle at 50% 100%, rgba(139, 92, 246, 0.12), transparent 28%),
-    linear-gradient(180deg, #090613 0%, #100922 55%, #180e2f 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-deep);
 }
 
-.authHeader,
-.authFooter {
-  background: linear-gradient(90deg, rgba(18, 12, 34, 0.96), rgba(33, 24, 58, 0.92), rgba(18, 12, 34, 0.96));
-  border-bottom: 1px solid rgba(59, 45, 99, 0.55);
-}
-
-.authFooter {
-  border-bottom: none;
-  border-top: 1px solid rgba(59, 45, 99, 0.55);
-  padding: 18px 0 14px;
-}
-
-.authHeaderInner,
-.authFooterInner {
-  width: min(1500px, calc(100% - 48px));
-  margin: 0 auto;
+.authHeader {
+  height: var(--topbar-h);
+  border-bottom: 1px solid var(--border);
+  background: oklch(0.15 0.015 255 / 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
 }
 
 .authHeaderInner {
-  min-height: 76px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
 }
 
 .authBrand {
   display: flex;
   align-items: center;
-}
-
-.authBrandLogo {
-  width: 220px;
-  height: auto;
-  object-fit: contain;
-  display: block;
-}
-
-.authHeaderActions {
-  display: flex;
-  align-items: center;
   gap: 10px;
 }
 
-.authSupportBtn {
-  min-width: 150px;
-  justify-content: center;
+.authBrandMark {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--cyan) 0%, var(--cyan-deep) 100%);
+  display: grid; place-items: center;
 }
 
+.authBrandName {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.authBrandLogo {
+  height: 28px;
+  width: auto;
+}
+
+.authSupportBtn {
+  font-size: 12px;
+}
+
+/* Main */
 .authMain {
+  flex: 1;
   display: grid;
   place-items: center;
-  padding: 40px 24px;
+  padding: 40px 20px;
 }
 
 .authFrame {
   width: 100%;
-  max-width: 760px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background:
-    linear-gradient(135deg, rgba(56, 189, 248, 0.06), transparent 25%),
-    linear-gradient(180deg, rgba(18, 12, 34, 0.62), rgba(10, 7, 23, 0.78));
-  box-shadow:
-    0 0 0 1px rgba(56, 189, 248, 0.1),
-    0 16px 40px rgba(0, 0, 0, 0.4);
+  max-width: 420px;
 }
 
 .authPanel {
-  background:
-    radial-gradient(circle at top left, rgba(139, 92, 246, 0.14), transparent 30%),
-    linear-gradient(180deg, rgba(23, 17, 41, 0.95), rgba(18, 12, 34, 0.95));
+  background: var(--surface-0);
   border: 1px solid var(--border);
-  padding: 18px;
+  border-radius: var(--r-xl);
+  padding: 32px 36px;
+  box-shadow: var(--shadow-lg);
 }
 
 .authHero {
   text-align: center;
-  border: 1px solid var(--border);
-  padding: 18px 20px;
-  margin-bottom: 18px;
+  margin-bottom: 28px;
 }
 
 .authHero h1 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--text);
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .authHero p {
-  margin: 10px 0 0;
-  color: var(--text);
-  opacity: 0.88;
-  font-size: 15px;
-  line-height: 1.4;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-3);
+  line-height: 1.5;
 }
 
 .authForm {
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .authField {
-  display: grid;
-  gap: 8px;
-  border: 1px solid var(--border);
-  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .authField label {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-4);
 }
 
 .authInput {
-  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 14px;
-  background: var(--panel-2);
+  border-radius: var(--r-md);
   color: var(--text);
+  font-size: 13px;
   outline: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  transition: border-color 0.12s;
 }
 
-.authInput::placeholder {
-  color: rgba(184, 171, 217, 0.72);
-}
+.authInput:focus { border-color: var(--cyan-deep); }
+.authInput::placeholder { color: var(--text-4); }
 
-.authInput:focus {
-  border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.16);
-  background: var(--panel-3);
+.errorBox {
+  padding: 10px 12px;
+  background: var(--red-dim);
+  border: 1px solid oklch(0.68 0.19 25 / 0.3);
+  border-radius: var(--r-md);
+  font-size: 12px;
+  color: var(--red);
+  font-family: var(--font-mono);
 }
 
 .authSubmitRow {
-  display: flex;
-  justify-content: center;
-  padding: 10px 14px;
+  padding-top: 4px;
 }
 
 .authSubmitBtn {
-  min-width: 220px;
-  padding: 12px 18px;
+  width: 100%;
+  height: 36px;
+  background: var(--cyan);
+  color: oklch(0.15 0.015 255);
+  border: none;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
 }
 
-.authFooterSide {
+.authSubmitBtn:hover { background: oklch(0.82 0.16 210); }
+.authSubmitBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Footer */
+.authFooter {
+  border-top: 1px solid var(--border-soft);
+  padding: 14px 28px;
+}
+
+.authFooterInner {
+  max-width: 1200px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
-  min-width: 0;
-}
-
-.authFooterLeft {
-  justify-content: flex-start;
-}
-
-.authFooterCenter {
-  display: flex;
-  justify-content: center;
-  text-align: center;
-}
-
-.authFooterRight {
-  justify-content: flex-end;
-}
-
-.authFooterBrand {
-  display: flex;
-  align-items: center;
+  justify-content: space-between;
 }
 
 .authFooterLogo {
-  width: 180px;
-  height: auto;
-  object-fit: contain;
-  display: block;
+  height: 20px;
+  width: auto;
+  opacity: 0.5;
 }
 
 .authFooterText {
-  color: var(--muted);
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-4);
   text-align: center;
-  white-space: nowrap;
 }
 
-.authFooterActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+.authFooterSide { flex: 1; }
+.authFooterRight { display: flex; justify-content: flex-end; }

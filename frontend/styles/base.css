@@ -1,27 +1,37 @@
 /* ==========================================================================
-   Base global
-   Uso: reset, tipografía y estilos base del documento
+   Base — compatible con tokens v2 (oklch surfaces)
    ========================================================================== */
 
-* {
-  box-sizing: border-box;
-}
+/* Google Fonts — Inter Tight + JetBrains Mono */
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-html,
-body {
+* { box-sizing: border-box; }
+
+html, body {
   padding: 0;
   margin: 0;
-  background: linear-gradient(180deg, #0b0717 0%, #120b24 55%, #1a1030 100%);
+  background: var(--bg);
   color: var(--text);
-  font-family: Arial, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: 'ss01', 'cv11', 'tnum';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+#__next { min-height: 100vh; }
 
-button,
-input {
-  font: inherit;
-}
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: none; border: none; cursor: pointer; }
+
+.mono { font-family: var(--font-mono); font-variant-ligatures: none; }
+.num  { font-variant-numeric: tabular-nums; }
+
+::selection { background: var(--cyan-dim); color: var(--text); }
+*:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+
+/* scrollbar */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-4); background-clip: content-box; border: 2px solid transparent; }

@@ -9,7 +9,6 @@ import {
   loadSettings,
   relativeTime,
   saveNotificationState,
-  seedTickets,
 } from '../lib/panel'
 
 const Icon = ({ name, size = 16, className = '' }) => {
@@ -225,12 +224,13 @@ export default function AppShell({
     const load = async () => {
       try {
         if (typeof window === 'undefined' || !localStorage.getItem('token')) return
-        const [assets, audit, vms] = await Promise.all([
+        const [assets, audit, vms, support] = await Promise.all([
           apiJson('/api/assets').catch(() => []),
           apiJson('/api/audit').catch(() => []),
           apiJson('/api/my/vms').catch(() => []),
+          apiJson('/api/support/tickets').catch(() => ({ items: [] })),
         ])
-        const tickets = seedTickets()
+        const tickets = support?.items || []
         const notifState = loadNotificationState()
         const compiled = buildNotifications({ assets, audit, vms, tickets }).map(item => ({
           ...item,

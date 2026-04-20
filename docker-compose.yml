@@ -70,6 +70,13 @@ services:
       PROXMOX_NODE: hyperprox
       PROXMOX_HOST: 192.168.10.20
 
+      # Jira Cloud
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-CM}
+      JIRA_DEFAULT_ISSUE_TYPE_NAME: ${JIRA_DEFAULT_ISSUE_TYPE_NAME:-}
+
     depends_on:
       - postgres
       - redis

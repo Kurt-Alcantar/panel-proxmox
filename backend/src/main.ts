@@ -8,6 +8,7 @@ import { FleetController } from './controllers/fleet.controller'
 import { InfrastructureController } from './controllers/infrastructure.controller'
 import { AuthController } from './controllers/auth.controller'
 import { AdminController } from './controllers/admin.controller'
+import { SupportController } from './controllers/support.controller'
 
 // Services
 import { PrismaService } from './services/prisma.service'
@@ -22,6 +23,7 @@ import { ProxmoxService } from './services/proxmox.service'
 import { VeeamJobsService } from './services/veeam-jobs.service'
 import { VeeamController } from './controllers/veeam.controller'
 import { KeycloakAdminService } from './services/keycloak-admin.service'
+import { JiraService } from './services/jira.service'
 
 @Module({
   controllers: [
@@ -35,6 +37,7 @@ import { KeycloakAdminService } from './services/keycloak-admin.service'
     // Auth y Admin sin cambios
     AuthController,
     AdminController,
+    SupportController,
   ],
   providers: [
     PrismaService,
@@ -48,6 +51,7 @@ import { KeycloakAdminService } from './services/keycloak-admin.service'
     VeeamJobsService,
     ProxmoxService,
     KeycloakAdminService,
+    JiraService,
   ],
 })
 class AppModule {}

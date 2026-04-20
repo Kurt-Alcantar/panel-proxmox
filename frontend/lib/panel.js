@@ -1,6 +1,5 @@
 const SETTINGS_KEY = 'hyperox_ui_settings_v1'
 const NOTIFICATION_STATE_KEY = 'hyperox_notifications_state_v1'
-const TICKETS_KEY = 'hyperox_support_tickets_v1'
 
 export const DEFAULT_SETTINGS = {
   accent: 'violet',
@@ -118,12 +117,12 @@ export function buildNotifications({ assets = [], audit = [], vms = [], tickets 
     })
   })
 
-  tickets.filter(t => t.status !== 'closed').slice(0, 3).forEach(ticket => {
+  tickets.filter(t => !/done|closed/i.test(String(t.status || ''))).slice(0, 3).forEach(ticket => {
     items.push({
-      id: `ticket-${ticket.id}`,
-      title: `Ticket ${ticket.title}`,
-      detail: `${ticket.priority} · ${ticket.status}`,
-      severity: ticket.priority === 'high' ? 'critical' : 'info',
+      id: `ticket-${ticket.key || ticket.id}`,
+      title: `Ticket ${ticket.key || ticket.id} · ${ticket.title || ticket.summary || 'Issue'}`,
+      detail: `${ticket.priority || 'Medium'} · ${ticket.status || '-'}`,
+      severity: /highest|high|critical/i.test(String(ticket.priority || '')) ? 'critical' : 'info',
       ts: new Date(ticket.updatedAt || ticket.createdAt || now).getTime(),
       href: '/support',
       type: 'ticket',
@@ -141,45 +140,3 @@ export function relativeTime(ts) {
   return `${Math.round(hours / 24)}d ago`
 }
 
-export function loadTickets() {
-  if (typeof window === 'undefined') return []
-  try {
-    return JSON.parse(localStorage.getItem(TICKETS_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-export function saveTickets(tickets) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(TICKETS_KEY, JSON.stringify(tickets))
-}
-
-export function seedTickets() {
-  const current = loadTickets()
-  if (current.length) return current
-  const initial = [
-    {
-      id: 'SUP-1001',
-      title: 'Elastic agent offline en srv-web-edge-02',
-      status: 'open',
-      priority: 'high',
-      owner: 'Plataforma',
-      description: 'Validar conectividad Fleet y estado del servicio.',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: 'SUP-1002',
-      title: 'Revisar policy windows-prod',
-      status: 'in_progress',
-      priority: 'medium',
-      owner: 'Observability',
-      description: 'Ajustar inputs y revisar drift de configuración.',
-      createdAt: new Date(Date.now() - 3600e3).toISOString(),
-      updatedAt: new Date(Date.now() - 1800e3).toISOString(),
-    },
-  ]
-  saveTickets(initial)
-  return initial
-}

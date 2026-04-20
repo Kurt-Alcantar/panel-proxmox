@@ -6,13 +6,8 @@ export default function Home() {
 
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-
-    if (token) {
-      router.replace('/vms')
-    } else {
-      router.replace('/login')
-    }
+    router.replace(token ? '/overview' : '/login')
   }, [router])
 
-  return <div>Cargando...</div>
+  return <div className="emptyState">Cargando...</div>
 }

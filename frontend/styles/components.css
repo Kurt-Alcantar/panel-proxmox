@@ -340,3 +340,11 @@
   background-size: 22px 22px;
   background-position: -1px -1px;
 }
+
+
+/* Legacy aliases */
+.btnPrimary { background: var(--cyan); color: oklch(0.15 0.015 255); border: 1px solid var(--cyan); }
+.btnPrimary:hover { background: oklch(0.82 0.16 210); }
+.btnSecondary { background: var(--surface-1); color: var(--text); border: 1px solid var(--border); }
+.btnSecondary:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.cardPad { padding: 18px 20px; }

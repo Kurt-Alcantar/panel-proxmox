@@ -5,44 +5,20 @@ export const DEFAULT_SETTINGS = {
   accent: 'violet',
   radius: 16,
   dense: false,
-  showTweaks: true,
 }
 
 export const ACCENT_MAP = {
-  cyan: {
-    cyan: 'oklch(0.75 0.16 235)',
-    cyanDeep: 'oklch(0.58 0.16 235)',
-    cyanDim: 'oklch(0.75 0.16 235 / 0.14)',
-  },
-  teal: {
-    cyan: 'oklch(0.78 0.15 185)',
-    cyanDeep: 'oklch(0.58 0.14 185)',
-    cyanDim: 'oklch(0.78 0.15 185 / 0.14)',
-  },
-  green: {
-    cyan: 'oklch(0.80 0.16 155)',
-    cyanDeep: 'oklch(0.59 0.14 155)',
-    cyanDim: 'oklch(0.80 0.16 155 / 0.14)',
-  },
-  violet: {
-    cyan: 'oklch(0.74 0.16 295)',
-    cyanDeep: 'oklch(0.54 0.17 295)',
-    cyanDim: 'oklch(0.74 0.16 295 / 0.14)',
-  },
-  coral: {
-    cyan: 'oklch(0.76 0.16 25)',
-    cyanDeep: 'oklch(0.58 0.16 25)',
-    cyanDim: 'oklch(0.76 0.16 25 / 0.14)',
-  },
+  cyan:   { cyan: 'oklch(0.75 0.16 235)', cyanDeep: 'oklch(0.58 0.16 235)', cyanDim: 'oklch(0.75 0.16 235 / 0.14)' },
+  teal:   { cyan: 'oklch(0.78 0.15 185)', cyanDeep: 'oklch(0.58 0.14 185)', cyanDim: 'oklch(0.78 0.15 185 / 0.14)' },
+  green:  { cyan: 'oklch(0.80 0.16 155)', cyanDeep: 'oklch(0.59 0.14 155)', cyanDim: 'oklch(0.80 0.16 155 / 0.14)' },
+  violet: { cyan: 'oklch(0.74 0.16 295)', cyanDeep: 'oklch(0.54 0.17 295)', cyanDim: 'oklch(0.74 0.16 295 / 0.14)' },
+  coral:  { cyan: 'oklch(0.76 0.16 25)',  cyanDeep: 'oklch(0.58 0.16 25)',  cyanDim: 'oklch(0.76 0.16 25 / 0.14)'  },
 }
 
 export function loadSettings() {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS
-  try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }
-  } catch {
-    return DEFAULT_SETTINGS
-  }
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') } }
+  catch { return DEFAULT_SETTINGS }
 }
 
 export function saveSettings(settings) {
@@ -64,11 +40,8 @@ export function applySettings(settings) {
 
 export function loadNotificationState() {
   if (typeof window === 'undefined') return { readIds: [] }
-  try {
-    return { readIds: [], ...JSON.parse(localStorage.getItem(NOTIFICATION_STATE_KEY) || '{}') }
-  } catch {
-    return { readIds: [] }
-  }
+  try { return { readIds: [], ...JSON.parse(localStorage.getItem(NOTIFICATION_STATE_KEY) || '{}') } }
+  catch { return { readIds: [] } }
 }
 
 export function saveNotificationState(state) {
@@ -104,12 +77,11 @@ export function buildNotifications({ assets = [], audit = [], vms = [], tickets 
     })
   })
 
-  const stopped = vms.filter(vm => vm.status && vm.status !== 'running').slice(0, 3)
-  stopped.forEach(vm => {
+  vms.filter(vm => vm.status && vm.status !== 'running').slice(0, 3).forEach(vm => {
     items.push({
       id: `vm-${vm.vmid}-${vm.status}`,
       title: `${vm.name || `VM ${vm.vmid}`} en estado ${vm.status}`,
-      detail: `${vm.pool_id || 'sin pool'} · nodo ${vm.node || '-'}`,
+      detail: `${vm.pool_id || 'sin grupo'} · nodo ${vm.node || '-'}`,
       severity: vm.status === 'stopped' ? 'warning' : 'info',
       ts: now - 20 * 60 * 1000,
       href: `/vms/${vm.vmid}`,
@@ -140,3 +112,14 @@ export function relativeTime(ts) {
   return `${Math.round(hours / 24)}d ago`
 }
 
+export function exportToCSV(data, filename = 'export.csv') {
+  if (!data || !data.length) return
+  const headers = Object.keys(data[0])
+  const rows = data.map(row => headers.map(h => JSON.stringify(row[h] ?? '')).join(','))
+  const csv = [headers.join(','), ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}

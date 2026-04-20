@@ -9,6 +9,10 @@ import { InfrastructureController } from './controllers/infrastructure.controlle
 import { AuthController } from './controllers/auth.controller'
 import { AdminController } from './controllers/admin.controller'
 import { SupportController } from './controllers/support.controller'
+import { MeController } from './controllers/me.controller'
+import { SearchController } from './controllers/search.controller'
+import { OverviewController } from './controllers/overview.controller'
+import { VeeamController } from './controllers/veeam.controller'
 
 // Services
 import { PrismaService } from './services/prisma.service'
@@ -21,23 +25,22 @@ import { FleetService } from './services/fleet.service'
 import { FleetSyncJob } from './services/fleet-sync.job'
 import { ProxmoxService } from './services/proxmox.service'
 import { VeeamJobsService } from './services/veeam-jobs.service'
-import { VeeamController } from './controllers/veeam.controller'
 import { KeycloakAdminService } from './services/keycloak-admin.service'
 import { JiraService } from './services/jira.service'
 
 @Module({
   controllers: [
-    // Dominio B: observabilidad (nuevos)
     AssetsController,
     AdminAssetsController,
     FleetController,
     VeeamController,
-    // Dominio A: infraestructura + capa compat /vms/*
     InfrastructureController,
-    // Auth y Admin sin cambios
     AuthController,
     AdminController,
     SupportController,
+    MeController,
+    SearchController,
+    OverviewController,
   ],
   providers: [
     PrismaService,
@@ -59,10 +62,18 @@ class AppModule {}
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
 
+  // CORS restringido al dominio del panel — nunca '*' en producción
+  const allowedOrigins = (process.env.CORS_ORIGIN || 'https://mxdr.hyperox.mx').split(',').map(s => s.trim())
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: (origin: string | undefined, callback: Function) => {
+      // Permitir requests sin origin (Nginx, curl interno, health checks)
+      if (!origin) return callback(null, true)
+      if (allowedOrigins.includes(origin)) return callback(null, true)
+      callback(new Error(`CORS bloqueado para origen: ${origin}`))
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
+    credentials: true,
   })
 
   const port = parseInt(process.env.PORT || '3000', 10)
@@ -76,15 +87,13 @@ async function bootstrap() {
   const runSync = async () => {
     try {
       const result = await syncJob.run()
-      console.log(`Fleet auto-sync: +${result.created} creados, ~${result.updated} actualizados`)
+      console.log(`Fleet auto-sync: +${result.created} creados, ~${result.updated} actualizados, ${result.unenrolled} unenrolled`)
     } catch (e: any) {
       console.error(`Fleet auto-sync error: ${e.message}`)
     }
   }
 
-  // Primera ejecución al arrancar (espera 30s para que todo esté listo)
   setTimeout(runSync, 30000)
-  // Ejecuciones periódicas
   setInterval(runSync, syncInterval)
 }
 

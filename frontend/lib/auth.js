@@ -1,3 +1,7 @@
+// Panel Hyperox v2 — auth helpers
+// IMPORTANTE: usa el cliente 'hyperox-panel' (público, scope limitado)
+// NO usar 'admin-cli' que es cliente server-side de administración de Keycloak
+
 export function clearSession() {
   if (typeof window === 'undefined') return
   localStorage.removeItem('token')
@@ -21,6 +25,7 @@ export async function apiFetch(url, options = {}) {
   if (res.status !== 401) return res
   if (!refreshToken) {
     clearSession()
+    window.location.href = '/login'
     return res
   }
 
@@ -32,12 +37,14 @@ export async function apiFetch(url, options = {}) {
 
   if (!refreshRes.ok) {
     clearSession()
+    window.location.href = '/login'
     return res
   }
 
   const refreshData = await refreshRes.json()
   if (!refreshData?.access_token) {
     clearSession()
+    window.location.href = '/login'
     return res
   }
 
@@ -50,16 +57,18 @@ export async function apiFetch(url, options = {}) {
 
 export async function apiJson(url, options = {}) {
   const res = await apiFetch(url, options)
-  if (res.status === 401) throw new Error('AUTH_EXPIRED')
+  if (res.status === 401) {
+    clearSession()
+    if (typeof window !== 'undefined') window.location.href = '/login'
+    throw new Error('AUTH_EXPIRED')
+  }
   if (!res.ok) {
     let message = 'Error de solicitud'
     try {
       const data = await res.json()
       message = data?.message || data?.error || message
     } catch {
-      try {
-        message = await res.text() || message
-      } catch {}
+      try { message = await res.text() || message } catch {}
     }
     throw new Error(message)
   }

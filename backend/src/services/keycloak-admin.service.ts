@@ -20,12 +20,13 @@ interface UpdateKeycloakUserInput {
 
 @Injectable()
 export class KeycloakAdminService {
-  private readonly baseUrl = process.env.KEYCLOAK_INTERNAL_URL || process.env.KEYCLOAK_URL || 'http://keycloak:8080'
-  private readonly adminRealm = process.env.KEYCLOAK_ADMIN_REALM || 'master'
-  private readonly realm = process.env.KEYCLOAK_REALM || 'master'
-  private readonly clientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli'
-  private readonly username = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || 'admin'
-  private readonly password = process.env.KEYCLOAK_ADMIN_PASSWORD || 'admin123'
+  private readonly baseUrl     = process.env.KEYCLOAK_INTERNAL_URL || process.env.KEYCLOAK_URL || 'http://keycloak:8080'
+  private readonly adminRealm  = process.env.KEYCLOAK_ADMIN_REALM || 'master'
+  private readonly realm        = process.env.KEYCLOAK_REALM || 'master'
+  // admin-cli sigue siendo correcto AQUÍ (servicio server-side para admin API)
+  private readonly clientId    = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli'
+  private readonly username    = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || 'admin'
+  private readonly password    = process.env.KEYCLOAK_ADMIN_PASSWORD || 'admin123'
 
   private describeAxiosError(error: any) {
     if (axios.isAxiosError(error)) {
@@ -45,7 +46,6 @@ export class KeycloakAdminService {
     params.append('grant_type', 'password')
     params.append('username', this.username)
     params.append('password', this.password)
-
     try {
       const response = await axios.post(
         `${this.baseUrl}/realms/${this.adminRealm}/protocol/openid-connect/token`,
@@ -54,9 +54,7 @@ export class KeycloakAdminService {
       )
       return response.data.access_token as string
     } catch (error) {
-      throw new InternalServerErrorException(
-        `No se pudo obtener token administrativo de Keycloak: ${this.describeAxiosError(error)}`
-      )
+      throw new InternalServerErrorException(`No se pudo obtener token administrativo de Keycloak: ${this.describeAxiosError(error)}`)
     }
   }
 
@@ -68,9 +66,7 @@ export class KeycloakAdminService {
   async findUserByUsername(username: string) {
     const headers = await this.authHeaders()
     const response = await axios.get(`${this.baseUrl}/admin/realms/${this.realm}/users`, {
-      headers,
-      params: { username, exact: true },
-      timeout: 15000,
+      headers, params: { username, exact: true }, timeout: 15000,
     })
     return Array.isArray(response.data) && response.data.length ? response.data[0] : null
   }
@@ -78,11 +74,23 @@ export class KeycloakAdminService {
   async findUserByEmail(email: string) {
     const headers = await this.authHeaders()
     const response = await axios.get(`${this.baseUrl}/admin/realms/${this.realm}/users`, {
-      headers,
-      params: { email, exact: true },
-      timeout: 15000,
+      headers, params: { email, exact: true }, timeout: 15000,
     })
     return Array.isArray(response.data) && response.data.length ? response.data[0] : null
+  }
+
+  // Obtener usuario por ID (usado por MeController para nombre/email)
+  async getUser(userId: string) {
+    const headers = await this.authHeaders()
+    try {
+      const response = await axios.get(`${this.baseUrl}/admin/realms/${this.realm}/users/${userId}`, {
+        headers, timeout: 15000,
+      })
+      return response.data
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) return null
+      throw new InternalServerErrorException(`No se pudo obtener usuario de Keycloak: ${this.describeAxiosError(error)}`)
+    }
   }
 
   async createOrGetUser(input: CreateOrGetUserInput) {
@@ -101,18 +109,12 @@ export class KeycloakAdminService {
       enabled: input.enabled ?? true,
       emailVerified: true,
     }
-
-    if (input.password) {
-      payload.credentials = [{ type: 'password', value: input.password, temporary: false }]
-    }
+    if (input.password) payload.credentials = [{ type: 'password', value: input.password, temporary: false }]
 
     try {
       const response = await axios.post(`${this.baseUrl}/admin/realms/${this.realm}/users`, payload, {
-        headers,
-        timeout: 15000,
-        validateStatus: (status) => status >= 200 && status < 400,
+        headers, timeout: 15000, validateStatus: (status) => status >= 200 && status < 400,
       })
-
       const locationHeader = response.headers.location || response.headers.Location
       const id = locationHeader ? String(locationHeader).split('/').pop() : undefined
       if (!id) {
@@ -120,7 +122,6 @@ export class KeycloakAdminService {
         if (!createdUser?.id) throw new Error('No se pudo resolver el ID del usuario recién creado en Keycloak.')
         return { id: createdUser.id as string, created: true, user: createdUser }
       }
-
       return { id, created: true, user: payload }
     } catch (error) {
       throw new InternalServerErrorException(`No se pudo crear usuario en Keycloak: ${this.describeAxiosError(error)}`)
@@ -135,12 +136,8 @@ export class KeycloakAdminService {
       if (value !== undefined) payload[field] = value
     }
     if (input.enabled !== undefined) payload.enabled = input.enabled
-
     try {
-      await axios.put(`${this.baseUrl}/admin/realms/${this.realm}/users/${userId}`, payload, {
-        headers,
-        timeout: 15000,
-      })
+      await axios.put(`${this.baseUrl}/admin/realms/${this.realm}/users/${userId}`, payload, { headers, timeout: 15000 })
       return { ok: true }
     } catch (error) {
       throw new InternalServerErrorException(`No se pudo actualizar usuario en Keycloak: ${this.describeAxiosError(error)}`)
@@ -168,10 +165,7 @@ export class KeycloakAdminService {
   async deleteUser(userId: string) {
     const headers = await this.authHeaders()
     try {
-      await axios.delete(`${this.baseUrl}/admin/realms/${this.realm}/users/${userId}`, {
-        headers,
-        timeout: 15000,
-      })
+      await axios.delete(`${this.baseUrl}/admin/realms/${this.realm}/users/${userId}`, { headers, timeout: 15000 })
       return { ok: true }
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) return { ok: true, alreadyMissing: true }

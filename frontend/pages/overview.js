@@ -1,90 +1,47 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import AppShell, { ShellIcon } from '../components/AppShell'
-import { applySettings, loadSettings, saveSettings } from '../lib/panel'
+import { apiJson } from '../lib/auth'
+import { exportToCSV } from '../lib/panel'
+import { usePolling } from '../hooks/usePolling'
 
-const FALLBACK_ALERTS = [
-  { id: 'a1', title: 'Disk usage > 90% on srv-veeam-bkp', meta: 'srv-veeam-bkp · disk.used_pct > 90', ago: '8m ago', severity: 'critical' },
-  { id: 'a2', title: 'Failed logon spike (user: svc-api)', meta: 'DC01 · logon.fail > 20/5m', ago: '12m ago', severity: 'warning' },
-  { id: 'a3', title: 'Veeam job — Backup_DB_Prod warning', meta: 'srv-veeam-bkp · veeam.result = warning', ago: '1h ago', severity: 'warning' },
-]
-
-function pct(num, total) {
-  if (!total) return 0
-  return Math.round((num / total) * 100)
-}
-
-function clamp(num, min, max) {
-  return Math.max(min, Math.min(max, num))
-}
-
-function formatPct(num) {
-  return `${Number(num || 0).toFixed(1)}%`
-}
+function pct(num, total) { return !total ? 0 : Math.round((num / total) * 100) }
+function clamp(num, min, max) { return Math.max(min, Math.min(max, num)) }
 
 function Spark({ values = [], stroke = 'var(--cyan)', fill = 'var(--cyan-dim)' }) {
-  const width = 320
-  const height = 88
-  const max = Math.max(...values, 1)
-  const min = Math.min(...values, 0)
-  const span = max - min || 1
-
-  const points = values
-    .map((v, i) => {
-      const x = (i / Math.max(values.length - 1, 1)) * width
-      const y = height - ((v - min) / span) * (height - 12) - 6
-      return `${x},${y}`
-    })
-    .join(' ')
-
-  const area = `0,${height} ${points} ${width},${height}`
-
+  const w = 320, h = 88
+  const max = Math.max(...values, 1), min = Math.min(...values, 0), span = max - min || 1
+  const points = values.map((v, i) => {
+    const x = (i / Math.max(values.length - 1, 1)) * w
+    const y = h - ((v - min) / span) * (h - 12) - 6
+    return `${x},${y}`
+  }).join(' ')
   return (
-    <svg className="overview-spark" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={fill} />
-          <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-        </linearGradient>
-      </defs>
-      <polygon points={area} fill="url(#sparkFill)" />
+    <svg className="overview-spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <polygon points={`0,${h} ${points} ${w},${h}`} fill={fill} />
       <polyline points={points} fill="none" stroke={stroke} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
 
 function OverviewChart({ primary = [], secondary = [] }) {
-  const width = 860
-  const height = 260
-  const max = Math.max(...primary, ...secondary, 100)
-  const min = 0
-  const span = max - min || 1
-
+  const w = 860, h = 260
+  const max = Math.max(...primary, ...secondary, 100), span = max || 1
   const make = (series) => series.map((v, i) => {
-    const x = (i / Math.max(series.length - 1, 1)) * width
-    const y = height - ((v - min) / span) * (height - 28) - 16
+    const x = (i / Math.max(series.length - 1, 1)) * w
+    const y = h - (v / span) * (h - 28) - 16
     return `${x},${y}`
   }).join(' ')
-
   const p1 = make(primary)
-  const p2 = make(secondary)
-  const area = `0,${height} ${p1} ${width},${height}`
-
   return (
-    <svg className="overview-chart-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="overviewArea" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(173, 161, 255, 0.38)" />
-          <stop offset="100%" stopColor="rgba(173, 161, 255, 0)" />
-        </linearGradient>
-      </defs>
+    <svg className="overview-chart-svg" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
       {[0.2, 0.4, 0.6, 0.8].map(mark => {
-        const y = height - mark * (height - 28) - 16
-        return <line key={mark} x1="0" x2={width} y1={y} y2={y} stroke="rgba(154,163,191,0.12)" strokeDasharray="4 8" />
+        const y = h - mark * (h - 28) - 16
+        return <line key={mark} x1="0" x2={w} y1={y} y2={y} stroke="rgba(154,163,191,0.12)" strokeDasharray="4 8" />
       })}
-      <polygon points={area} fill="url(#overviewArea)" />
-      <polyline points={p2} fill="none" stroke="rgba(250, 204, 21, 0.78)" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points={p1} fill="none" stroke="rgba(196, 181, 253, 0.96)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polygon points={`0,${h} ${p1} ${w},${h}`} fill="rgba(173,161,255,0.15)" />
+      {secondary.length > 1 && <polyline points={make(secondary)} fill="none" stroke="rgba(250,204,21,0.78)" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />}
+      <polyline points={p1} fill="none" stroke="rgba(196,181,253,0.96)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -96,9 +53,7 @@ function KpiCard({ label, value, sub, accent = 'var(--cyan)', series = [] }) {
       <div className="overview-kpi-label">{label}</div>
       <div className="overview-kpi-value">{value}</div>
       <div className="overview-kpi-sub">{sub}</div>
-      <div className="overview-kpi-spark-wrap">
-        <Spark values={series} stroke={accent} fill="rgba(255,255,255,0.06)" />
-      </div>
+      <div className="overview-kpi-spark-wrap"><Spark values={series} stroke={accent} fill="rgba(255,255,255,0.06)" /></div>
     </div>
   )
 }
@@ -107,130 +62,68 @@ export default function OverviewPage() {
   const router = useRouter()
   const [assets, setAssets] = useState([])
   const [vms, setVms] = useState([])
+  const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [metric, setMetric] = useState('cpu')
-  const [settings, setSettings] = useState({ accent: 'violet', radius: 16, dense: false, showTweaks: true })
 
-  const clearSession = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('token')
-      localStorage.removeItem('refresh_token')
-    }
-    router.replace('/login')
-  }, [router])
-
-  const authFetch = useCallback(async (url) => {
-    const token = localStorage.getItem('token')
-    if (!token) {
-      clearSession()
-      throw new Error('Sesión expirada')
-    }
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    if (res.status === 401) {
-      clearSession()
-      throw new Error('Sesión expirada')
-    }
-    return res
-  }, [clearSession])
-
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const [assetsRes, vmsRes] = await Promise.allSettled([
-        authFetch('/api/assets'),
-        authFetch('/api/my/vms'),
-      ])
-
-      if (assetsRes.status === 'fulfilled' && assetsRes.value.ok) {
-        setAssets(await assetsRes.value.json())
-      } else {
-        setAssets([])
-      }
-
-      if (vmsRes.status === 'fulfilled' && vmsRes.value.ok) {
-        setVms(await vmsRes.value.json())
-      } else {
-        setVms([])
-      }
-    } catch (err) {
-      setError(err.message || 'No se pudo cargar el overview')
-    } finally {
-      setLoading(false)
-    }
-  }, [authFetch])
-
+  // Carga inicial
   useEffect(() => {
-    loadData()
-    const current = loadSettings()
-    setSettings(current)
-    applySettings(current)
-  }, [loadData])
+    let active = true
+    Promise.allSettled([
+      apiJson('/api/assets'),
+      apiJson('/api/my/vms'),
+    ]).then(([ar, vr]) => {
+      if (!active) return
+      if (ar.status === 'fulfilled') setAssets(ar.value || [])
+      if (vr.status === 'fulfilled') setVms(vr.value || [])
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [])
+
+  // Polling de métricas reales cada 30s
+  const fetchMetrics = useCallback(async (signal) => {
+    const res = await fetch(`/api/overview/metrics?range=24h`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      signal,
+    })
+    if (!res.ok) return null
+    return res.json()
+  }, [])
+
+  usePolling(fetchMetrics, (data) => { if (data) setMetrics(data) }, 30000, true)
 
   const overview = useMemo(() => {
-    const totalAssets = assets.length
-    const onlineAssets = assets.filter(a => a.agent_status === 'online').length
-    const offlineAssets = assets.filter(a => a.agent_status === 'offline').length
-    const errorAssets = assets.filter(a => a.agent_status === 'error').length
+    const totalAssets    = assets.length
+    const onlineAssets   = assets.filter(a => a.agent_status === 'online').length
+    const offlineAssets  = assets.filter(a => a.agent_status === 'offline').length
+    const errorAssets    = assets.filter(a => a.agent_status === 'error').length
     const unenrolledAssets = assets.filter(a => a.agent_status === 'unenrolled').length
-    const windows = assets.filter(a => /windows/i.test(`${a.os_name || a.os_type || ''}`)).length
-    const linux = assets.filter(a => /linux/i.test(`${a.os_name || a.os_type || ''}`)).length
-    const proxmoxOrigin = assets.filter(a => !a.is_external).length
+    const windows        = assets.filter(a => /windows/i.test(`${a.os_name || a.os_type || ''}`)).length
+    const linux          = assets.filter(a => /linux/i.test(`${a.os_name || a.os_type || ''}`)).length
+    const proxmoxOrigin  = assets.filter(a => !a.is_external).length
     const externalOrigin = assets.filter(a => a.is_external).length
+    const runningVms     = vms.filter(vm => vm.status === 'running').length
+    const openIncidents  = errorAssets + offlineAssets
 
-    const runningVms = vms.filter(vm => vm.status === 'running').length
-    const cpuBase = vms.length ? vms.reduce((acc, vm) => acc + Number(vm.cpu || 0), 0) / vms.length : 4.2
-    const avgCpu = clamp(28 + cpuBase * 4.5 + runningVms * 0.4, 18, 82)
-    const p95Cpu = clamp(avgCpu + 17.6, 35, 96)
-    const peakCpu = clamp(p95Cpu + 12.4, 50, 98.8)
-
-    const seeded = Array.from({ length: 18 }).map((_, idx) => {
-      const wave = Math.sin(idx / 2.7) * 16 + Math.sin(idx / 1.35) * 7
-      return clamp(avgCpu + wave + (idx % 5) * 1.2, 12, 96)
-    })
-    const secondary = seeded.map((v, idx) => clamp(v + Math.cos(idx / 1.6) * 6 + 5, 10, 98))
-
-    const topAssets = [...vms]
-      .sort((a, b) => Number(b.cpu || 0) - Number(a.cpu || 0))
-      .slice(0, 3)
-      .map(vm => ({
-        id: vm.id,
-        name: vm.name || `vm-${vm.vmid}`,
-        tenant: vm.pool_id || 'ACME Corp',
-      }))
-
-    const alerts = FALLBACK_ALERTS
+    // Series de métricas: usar datos reales si disponibles, sino vacío
+    const cpuSeries   = metrics?.cpu?.series   || []
+    const memSeries   = metrics?.memory?.series || []
+    const netSeries   = metrics?.network?.series || []
+    const diskSeries  = metrics?.disk?.series  || []
 
     return {
-      totalAssets,
-      onlineAssets,
-      offlineAssets,
-      errorAssets,
-      unenrolledAssets,
-      windows,
-      linux,
-      proxmoxOrigin,
-      externalOrigin,
-      runningVms,
-      avgCpu,
-      p95Cpu,
-      peakCpu,
-      seeded,
-      secondary,
-      topAssets,
-      alerts,
-      failedLogons: 128,
-      openIncidents: Math.max(3, errorAssets + 2),
-      navCounts: {
-        '/assets': totalAssets || 0,
-        '/alerts': alerts.length,
-        '/vms': vms.length,
-        '/support': 2,
-      },
+      totalAssets, onlineAssets, offlineAssets, errorAssets, unenrolledAssets,
+      windows, linux, proxmoxOrigin, externalOrigin, runningVms, openIncidents,
+      cpuSeries, memSeries, netSeries, diskSeries,
+      navCounts: { '/assets': totalAssets, '/vms': vms.length },
     }
-  }, [assets, vms])
+  }, [assets, vms, metrics])
+
+  const trendSeries = { cpu: overview.cpuSeries, memory: overview.memSeries, network: overview.netSeries, disk: overview.diskSeries }
+  const currentSeries = trendSeries[metric] || []
+  const avgVal = currentSeries.length ? (currentSeries.reduce((a, b) => a + b, 0) / currentSeries.length).toFixed(1) : '—'
 
   const filteredAssets = useMemo(() => {
     if (!search) return assets
@@ -238,174 +131,104 @@ export default function OverviewPage() {
     return assets.filter(a => `${a.display_name || ''} ${a.host_name || ''} ${a.fleet_policy_name || ''}`.toLowerCase().includes(q))
   }, [assets, search])
 
-  const trendConfig = {
-    cpu: { avg: formatPct(overview.avgCpu), p95: formatPct(overview.p95Cpu), peak: formatPct(overview.peakCpu) },
-    memory: { avg: '61.4%', p95: '79.8%', peak: '92.2%' },
-    network: { avg: '38.6%', p95: '68.1%', peak: '88.0%' },
-    disk: { avg: '42.1%', p95: '70.4%', peak: '90.1%' },
-  }[metric]
+  const handleExport = () => {
+    exportToCSV(assets.map(a => ({
+      nombre: a.display_name || a.host_name,
+      estado: a.agent_status,
+      os: a.os_name || a.os_type,
+      version: a.agent_version,
+      ip: (a.ip_addresses || []).join('; '),
+      ultimo_checkin: a.last_checkin_at,
+    })), `overview-assets-${new Date().toISOString().slice(0, 10)}.csv`)
+  }
 
   return (
     <AppShell
       title="Infrastructure overview"
-      subtitle="Real-time signal across Proxmox nodes and externally monitored hosts. Data sourced from Fleet agents and Elasticsearch, reconciled via identity-resolver."
+      subtitle="Estado en tiempo real de activos monitoreados y VMs Proxmox."
       breadcrumbs={['Hyperox', 'Overview']}
       searchValue={search}
       onSearchChange={setSearch}
       navCounts={overview.navCounts}
       actions={
         <div className="overview-toolbar">
-          <span className="live-dot">LIVE · JS</span>
+          <span className="live-dot">LIVE · 30s</span>
           <button className="chip active">Last 24h</button>
-          <button className="btn btn-secondary"><ShellIcon name="export" /> Export</button>
+          <button className="btn btn-secondary" onClick={handleExport}><ShellIcon name="export" /> Export</button>
           <button className="btn btn-primary" onClick={() => router.push('/admin')}><ShellIcon name="plus" /> Add asset</button>
         </div>
       }
     >
-      {error && <div className="errorBox" style={{ marginBottom: 16 }}>{error}</div>}
-
       {loading ? (
         <div className="card cardPad"><p className="muted">Cargando overview...</p></div>
       ) : (
         <div className="overview-page">
           <div className="overview-kpis-grid">
-            <KpiCard label="Managed assets" value={overview.totalAssets || 47} sub="▲ +4 this week" accent="rgba(168, 139, 250, 0.95)" series={[22, 24, 26, 28, 29, 31, 33, 34]} />
-            <KpiCard label="Online agents" value={`${overview.onlineAssets || 44}/${overview.totalAssets || 47}`} sub="● 93.6% uptime 7d" accent="rgba(74, 222, 128, 0.95)" series={[30, 32, 33, 34, 34, 35, 35, 36]} />
-            <KpiCard label="Open incidents" value={overview.openIncidents} sub="▼ 2 resolved today" accent="rgba(250, 204, 21, 0.95)" series={[8, 12, 10, 15, 19, 14, 12, 11]} />
-            <KpiCard label="Failed logons 24h" value={overview.failedLogons} sub="▲ 1.22× vs 7d avg" accent="rgba(248, 113, 113, 0.95)" series={[40, 43, 45, 49, 51, 54, 56, 58]} />
+            <KpiCard label="Managed assets"   value={overview.totalAssets}   sub={`${overview.onlineAssets} online`}    accent="rgba(168,139,250,0.95)" series={overview.cpuSeries.slice(-8)} />
+            <KpiCard label="Online agents"    value={`${overview.onlineAssets}/${overview.totalAssets}`} sub={`${pct(overview.onlineAssets, overview.totalAssets)}% uptime`} accent="rgba(74,222,128,0.95)" series={overview.memSeries.slice(-8)} />
+            <KpiCard label="Incidentes abiertos" value={overview.openIncidents} sub={`${overview.errorAssets} error · ${overview.offlineAssets} offline`} accent="rgba(250,204,21,0.95)" series={[]} />
+            <KpiCard label="VMs activas"      value={`${overview.runningVms}/${vms.length}`} sub="Proxmox running" accent="rgba(248,113,113,0.95)" series={[]} />
           </div>
 
           <div className="overview-main-grid">
             <section className="card overview-chart-card">
               <div className="overview-card-head">
-                <div>
-                  <h3>Fleet-wide resource trends</h3>
-                </div>
+                <div><h3>Tendencias de recursos</h3></div>
                 <div className="overview-tabs">
-                  {[
-                    ['cpu', 'CPU'],
-                    ['memory', 'Memory'],
-                    ['network', 'Network'],
-                    ['disk', 'Disk I/O'],
-                  ].map(([key, label]) => (
+                  {[['cpu','CPU'],['memory','Memory'],['network','Network'],['disk','Disk I/O']].map(([key, label]) => (
                     <button key={key} className={`overview-tab${metric === key ? ' active' : ''}`} onClick={() => setMetric(key)}>{label}</button>
                   ))}
                 </div>
               </div>
-
               <div className="overview-chart-stats">
-                <div><span>CPU · AVG</span><strong>{trendConfig.avg}</strong></div>
-                <div><span>P95</span><strong>{trendConfig.p95}</strong></div>
-                <div><span>PEAK</span><strong>{trendConfig.peak}</strong></div>
+                <div><span>AVG</span><strong>{avgVal}{avgVal !== '—' ? '%' : ''}</strong></div>
               </div>
-
               <div className="overview-chart-wrap">
-                <OverviewChart primary={overview.seeded} secondary={overview.secondary} />
-                <div className="overview-chart-legend">
-                  <span><i className="legend-primary" /> cpu.avg</span>
-                  <span><i className="legend-secondary" /> cpu.p95</span>
-                </div>
+                <OverviewChart primary={currentSeries} secondary={[]} />
+                {currentSeries.length === 0 && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-4)', fontSize: 13 }}>
+                    Sin datos de métricas aún
+                  </div>
+                )}
               </div>
             </section>
 
             <aside className="card overview-status-card">
               <div className="overview-card-head compact">
-                <h3><ShellIcon name="globe" size={14} /> Assets by status</h3>
-                <span className="ch-meta">{overview.totalAssets || 47} total</span>
+                <h3><ShellIcon name="globe" size={14} /> Assets por estado</h3>
+                <span className="ch-meta">{overview.totalAssets} total</span>
               </div>
-
               <div className="overview-status-list">
                 {[
-                  ['Online', overview.onlineAssets || 44, 'var(--green)'],
-                  ['Error', overview.errorAssets || 1, 'var(--amber)'],
-                  ['Offline', overview.offlineAssets || 1, 'var(--red)'],
-                  ['Unenrolled', overview.unenrolledAssets || 1, 'var(--text-4)'],
+                  ['Online',     overview.onlineAssets,    'var(--green)'],
+                  ['Error',      overview.errorAssets,     'var(--amber)'],
+                  ['Offline',    overview.offlineAssets,   'var(--red)'],
+                  ['Unenrolled', overview.unenrolledAssets,'var(--text-4)'],
                 ].map(([label, value, color]) => (
                   <div key={label} className="status-bar-row">
                     <div className="status-bar-head"><span>{label}</span><span>{value}</span></div>
-                    <div className="status-bar-track"><div className="status-bar-fill" style={{ width: `${pct(value, overview.totalAssets || 47)}%`, background: color }} /></div>
+                    <div className="status-bar-track"><div className="status-bar-fill" style={{ width: `${pct(value, overview.totalAssets)}%`, background: color }} /></div>
                   </div>
                 ))}
               </div>
-
               <div className="overview-meta-grid">
                 <div>
-                  <div className="overview-meta-title">By OS</div>
-                  <div className="overview-meta-row"><span>⊞</span><span>{overview.windows || 32} windows</span></div>
-                  <div className="overview-meta-row"><span>◔</span><span>{overview.linux || 15} linux</span></div>
+                  <div className="overview-meta-title">Por OS</div>
+                  <div className="overview-meta-row"><span>⊞</span><span>{overview.windows} windows</span></div>
+                  <div className="overview-meta-row"><span>◔</span><span>{overview.linux} linux</span></div>
                 </div>
                 <div>
-                  <div className="overview-meta-title">By origin</div>
-                  <div className="overview-meta-row"><span>▤</span><span>{overview.proxmoxOrigin || 38} proxmox</span></div>
-                  <div className="overview-meta-row"><span>◎</span><span>{overview.externalOrigin || 9} external</span></div>
+                  <div className="overview-meta-title">Por origen</div>
+                  <div className="overview-meta-row"><span>▤</span><span>{overview.proxmoxOrigin} proxmox</span></div>
+                  <div className="overview-meta-row"><span>◎</span><span>{overview.externalOrigin} externo</span></div>
                 </div>
               </div>
             </aside>
           </div>
 
-          <div className="overview-bottom-grid">
-            <section className="card overview-list-card">
-              <div className="overview-card-head compact">
-                <h3><ShellIcon name="alerts" size={14} /> Active alerts</h3>
-                <button className="btn btn-ghost btn-sm" onClick={() => router.push('/alerts')}>View all →</button>
-              </div>
-              <div className="overview-list-wrap">
-                {overview.alerts.map(alert => (
-                  <div className="alert-row" key={alert.id}>
-                    <span className={`alert-accent ${alert.severity}`} />
-                    <div>
-                      <div className="alert-title">{alert.title}</div>
-                      <div className="alert-meta">{alert.meta}</div>
-                    </div>
-                    <div className="alert-ago">{alert.ago}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="card overview-list-card">
-              <div className="overview-card-head compact">
-                <h3>Top assets by CPU</h3>
-                <span className="ch-meta">last 15m</span>
-              </div>
-              <div className="overview-list-wrap">
-                {(overview.topAssets.length ? overview.topAssets : [
-                  { id: '1', name: 'srv-sql-prod-01', tenant: 'ACME Corp' },
-                  { id: '2', name: 'srv-veeam-bkp', tenant: 'ACME Corp' },
-                  { id: '3', name: 'srv-web-edge-02', tenant: 'ACME Corp' },
-                ]).map(asset => (
-                  <div className="top-asset-row" key={asset.id}>
-                    <div className="top-asset-icon"><ShellIcon name="assets" size={14} /></div>
-                    <div>
-                      <div className="top-asset-name">{asset.name}</div>
-                      <div className="top-asset-meta">{asset.tenant}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          {settings.showTweaks && <div className="overview-floating-tweaks card">
-            <div className="overview-tweaks-head">
-              <strong>Tweaks</strong>
-              <button onClick={() => { const next = { ...settings, showTweaks: false }; setSettings(next); saveSettings(next) }}>×</button>
-            </div>
-            <div className="overview-tweaks-label">Accent hue</div>
-            <div className="overview-swatch-row">
-              {['cyan', 'teal', 'green', 'violet', 'coral'].map(accent => (
-                <button key={accent} className={`swatch ${accent} ${settings.accent === accent ? 'active' : ''}`} onClick={() => { const next = { ...settings, accent }; setSettings(next); saveSettings(next); applySettings(next) }} />
-              ))}
-            </div>
-            <div className="overview-tweaks-label">Radius</div>
-            <input type="range" min="12" max="26" value={settings.radius} onChange={(e) => { const next = { ...settings, radius: Number(e.target.value) }; setSettings(next); saveSettings(next); applySettings(next) }} style={{ width: '100%' }} />
-            <div className="overview-tweaks-foot">hyperox.ui · dark · {settings.accent} · r{settings.radius}</div>
-          </div>}
-
           {search && (
             <div className="card cardPad" style={{ marginTop: 18 }}>
-              <div className="sectionTitle" style={{ fontSize: 16, marginBottom: 12 }}>Search preview</div>
-              <div className="sectionSub" style={{ marginBottom: 16 }}>{filteredAssets.length} activos coinciden con “{search}”.</div>
+              <div className="sectionTitle" style={{ fontSize: 16, marginBottom: 12 }}>Resultados para "{search}"</div>
               <div className="vmCardGrid">
                 {filteredAssets.slice(0, 6).map(asset => (
                   <div key={asset.id} className="vmCard" onClick={() => router.push(`/assets/${asset.id}`)} style={{ cursor: 'pointer' }}>
@@ -414,7 +237,7 @@ export default function OverviewPage() {
                         <div className="vmCardTitleBtn">{asset.display_name || asset.host_name || 'Asset'}</div>
                         <div className="vmCardTags"><span className="vmTag">{asset.fleet_policy_name || 'default-policy'}</span></div>
                       </div>
-                      <span className={`vm-status ${asset.agent_status === 'online' ? 'running' : asset.agent_status === 'offline' ? 'stopped' : 'unknown'}`}>{asset.agent_status || 'unknown'}</span>
+                      <span className={`vm-status ${asset.agent_status === 'online' ? 'running' : 'stopped'}`}>{asset.agent_status || 'unknown'}</span>
                     </div>
                   </div>
                 ))}

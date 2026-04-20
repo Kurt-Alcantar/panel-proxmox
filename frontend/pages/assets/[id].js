@@ -35,8 +35,17 @@ function AreaChart({ history, color = '#8b5cf6', label, height = 80 }) {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !history || history.length < 2) return
+    // Fix DPR: canvas nítido en pantallas retina
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.clientWidth || 280
+    const cssH = height
+    canvas.width  = cssW * dpr
+    canvas.height = cssH * dpr
+    canvas.style.width  = cssW + 'px'
+    canvas.style.height = cssH + 'px'
     const ctx = canvas.getContext('2d')
-    const w = canvas.width, h = canvas.height, pad = 4
+    ctx.scale(dpr, dpr)
+    const w = cssW, h = cssH, pad = 4
     ctx.clearRect(0, 0, w, h)
     const vals = history.map(v => v ?? 0)
     const maxV = Math.max(...vals, 1)
@@ -62,7 +71,7 @@ function AreaChart({ history, color = '#8b5cf6', label, height = 80 }) {
   return (
     <div>
       <div style={{ fontSize:11, color:'#b8abd9', marginBottom:4 }}>{label}</div>
-      <canvas ref={canvasRef} width={280} height={height} style={{ width:'100%', height }} />
+      <canvas ref={canvasRef} style={{ width:'100%', height, display:'block' }} />
     </div>
   )
 }

@@ -1,6 +1,16 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { apiJson } from '../lib/auth'
+import {
+  applySettings,
+  buildNotifications,
+  loadNotificationState,
+  loadSettings,
+  relativeTime,
+  saveNotificationState,
+  seedTickets,
+} from '../lib/panel'
 
 const Icon = ({ name, size = 16, className = '' }) => {
   const common = {
@@ -17,7 +27,6 @@ const Icon = ({ name, size = 16, className = '' }) => {
 
   const paths = {
     overview: <><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></>,
-    dashboard: <><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></>,
     assets: <><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><circle cx="7" cy="7" r="0.8" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="0.8" fill="currentColor" stroke="none"/></>,
     vms: <><rect x="3" y="3" width="18" height="14" rx="1.5"/><path d="M3 12h18"/><path d="M8 21h8"/><path d="M12 17v4"/></>,
     alerts: <><path d="M12 3l9 16H3l9-16z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.7" fill="currentColor" stroke="none"/></>,
@@ -41,31 +50,22 @@ const Icon = ({ name, size = 16, className = '' }) => {
 }
 
 const DEFAULT_NAV = [
-  {
-    title: 'Observability',
-    items: [
+  { title: 'Observability', items: [
       { href: '/overview', icon: 'overview', label: 'Overview' },
       { href: '/assets', icon: 'assets', label: 'Managed assets' },
       { href: '/alerts', icon: 'alerts', label: 'Alerts' },
       { href: '/audit', icon: 'audit', label: 'Audit log' },
-    ],
-  },
-  {
-    title: 'Infrastructure',
-    items: [
+  ]},
+  { title: 'Infrastructure', items: [
       { href: '/vms', icon: 'vms', label: 'Proxmox VMs' },
       { href: '/pools', icon: 'pool', label: 'Pools' },
       { href: '/fleet-agents', icon: 'terminal', label: 'Fleet agents' },
-    ],
-  },
-  {
-    title: 'Admin',
-    items: [
+  ]},
+  { title: 'Admin', items: [
       { href: '/admin', icon: 'tenant', label: 'Tenants & access' },
       { href: '/support', icon: 'tickets', label: 'Support tickets' },
       { href: '/settings', icon: 'settings', label: 'Settings' },
-    ],
-  },
+  ]},
 ]
 
 function Sidebar({ userName, userRole, navCounts }) {
@@ -74,10 +74,7 @@ function Sidebar({ userName, userRole, navCounts }) {
 
   const nav = useMemo(() => DEFAULT_NAV.map(group => ({
     ...group,
-    items: group.items.map(item => ({
-      ...item,
-      count: navCounts?.[item.href] ?? item.count,
-    })),
+    items: group.items.map(item => ({ ...item, count: navCounts?.[item.href] ?? item.count })),
   })), [navCounts])
 
   const isActive = (href) => {
@@ -86,25 +83,17 @@ function Sidebar({ userName, userRole, navCounts }) {
     return path === href
   }
 
-  const initials = (userName || 'U')
-    .split(' ')
-    .map(s => s[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
-
+  const initials = (userName || 'U').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()
   const logout = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('token')
-      localStorage.removeItem('refresh_token')
-    }
+    localStorage.removeItem('token')
+    localStorage.removeItem('refresh_token')
     router.replace('/login')
   }
 
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark" />
+        <img src="/logo.png" alt="Hyperox" className="brand-logo" />
         <div className="brand-name">Hyperox</div>
         <div className="brand-env mono">v2.0</div>
       </div>
@@ -113,16 +102,13 @@ function Sidebar({ userName, userRole, navCounts }) {
         {nav.map(group => (
           <div className="nav-group" key={group.title}>
             <div className="nav-title">{group.title}</div>
-            {group.items.map(item => {
-              const active = isActive(item.href)
-              return (
-                <Link className={`nav-item${active ? ' active' : ''}`} href={item.href} key={item.href}>
-                  <Icon name={item.icon} className="ni-ico" />
-                  <span>{item.label}</span>
-                  {item.count != null && <span className="ni-count">{item.count}</span>}
-                </Link>
-              )
-            })}
+            {group.items.map(item => (
+              <Link className={`nav-item${isActive(item.href) ? ' active' : ''}`} href={item.href} key={item.href}>
+                <Icon name={item.icon} className="ni-ico" />
+                <span>{item.label}</span>
+                {item.count != null && <span className="ni-count">{item.count}</span>}
+              </Link>
+            ))}
           </div>
         ))}
       </div>
@@ -143,7 +129,36 @@ function Sidebar({ userName, userRole, navCounts }) {
   )
 }
 
-function Topbar({ breadcrumbs, searchValue, onSearchChange, searchPlaceholder, actions, region }) {
+function NotificationPanel({ notifications, unreadCount, onMarkAllRead, onOpenItem }) {
+  return (
+    <div className="topbar-panel">
+      <div className="topbar-panel-head">
+        <div>
+          <strong>Notifications</strong>
+          <div className="topbar-panel-sub">{unreadCount} pendientes</div>
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={onMarkAllRead}>Marcar todas</button>
+      </div>
+      <div className="topbar-panel-list">
+        {notifications.length === 0 ? <div className="emptyState">Sin notificaciones.</div> : notifications.map(item => (
+          <button key={item.id} className={`notif-row ${item.read ? 'read' : ''}`} onClick={() => onOpenItem(item)}>
+            <span className={`notif-dot ${item.severity || 'info'}`} />
+            <div className="notif-body">
+              <div className="notif-title">{item.title}</div>
+              <div className="notif-detail">{item.detail}</div>
+            </div>
+            <div className="notif-time">{relativeTime(item.ts)}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Topbar({ breadcrumbs, searchValue, onSearchChange, searchPlaceholder, actions, region, notifications, onOpenItem, onMarkAllRead, onRefresh }) {
+  const unreadCount = notifications.filter(n => !n.read).length
+  const [open, setOpen] = useState(false)
+
   return (
     <div className="topbar">
       <div className="breadcrumb">
@@ -157,27 +172,21 @@ function Topbar({ breadcrumbs, searchValue, onSearchChange, searchPlaceholder, a
 
       <div className="topbar-search">
         <Icon name="search" className="ts-ico" />
-        <input
-          placeholder={searchPlaceholder || 'Search assets, agents, tenants...'}
-          value={searchValue || ''}
-          onChange={(e) => onSearchChange?.(e.target.value)}
-        />
+        <input placeholder={searchPlaceholder || 'Search assets, agents, tenants...'} value={searchValue || ''} onChange={(e) => onSearchChange?.(e.target.value)} />
         <span className="ts-kbd">⌘K</span>
       </div>
 
       <div className="topbar-actions">
         {actions}
-        <div className="tb-region">
-          <span className="region-dot" />
-          {region || 'mx-central-1'}
+        <div className="tb-region"><span className="region-dot" />{region || 'mx-central-1'}</div>
+        <div className="topbar-actions-rel">
+          <button className="tb-btn tb-btn-icon" title="Notificaciones" onClick={() => setOpen(v => !v)}>
+            <Icon name="bell" />
+            {unreadCount > 0 && <span className="tb-badge">{unreadCount}</span>}
+          </button>
+          {open && <NotificationPanel notifications={notifications} unreadCount={unreadCount} onMarkAllRead={onMarkAllRead} onOpenItem={(item) => { setOpen(false); onOpenItem(item) }} />}
         </div>
-        <button className="tb-btn tb-btn-icon" title="Notificaciones">
-          <Icon name="bell" />
-          <span className="tb-badge">3</span>
-        </button>
-        <button className="tb-btn tb-btn-icon" title="Refresh">
-          <Icon name="refresh" />
-        </button>
+        <button className="tb-btn tb-btn-icon" title="Refresh" onClick={onRefresh}><Icon name="refresh" /></button>
       </div>
     </div>
   )
@@ -202,12 +211,61 @@ export default function AppShell({
   navCounts,
   region,
 }) {
+  const router = useRouter()
+  const [notifications, setNotifications] = useState([])
   const crumbs = breadcrumbs || (title ? ['Hyperox', title] : ['Hyperox'])
+
+  useEffect(() => {
+    const settings = loadSettings()
+    applySettings(settings)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        if (typeof window === 'undefined' || !localStorage.getItem('token')) return
+        const [assets, audit, vms] = await Promise.all([
+          apiJson('/api/assets').catch(() => []),
+          apiJson('/api/audit').catch(() => []),
+          apiJson('/api/my/vms').catch(() => []),
+        ])
+        const tickets = seedTickets()
+        const notifState = loadNotificationState()
+        const compiled = buildNotifications({ assets, audit, vms, tickets }).map(item => ({
+          ...item,
+          read: notifState.readIds.includes(item.id),
+        }))
+        if (active) setNotifications(compiled)
+      } catch {
+        if (active) setNotifications([])
+      }
+    }
+    load()
+    window.addEventListener('hyperox:tickets-updated', load)
+    return () => {
+      active = false
+      window.removeEventListener('hyperox:tickets-updated', load)
+    }
+  }, [router.pathname])
+
+  const handleMarkAllRead = () => {
+    const next = { readIds: notifications.map(n => n.id) }
+    saveNotificationState(next)
+    setNotifications(prev => prev.map(item => ({ ...item, read: true })))
+  }
+
+  const handleOpenNotification = (item) => {
+    const state = loadNotificationState()
+    const next = { readIds: Array.from(new Set([...(state.readIds || []), item.id])) }
+    saveNotificationState(next)
+    setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n))
+    router.push(item.href || '/overview')
+  }
 
   return (
     <div className="app">
       <Sidebar userName={userName} userRole={userRole} navCounts={navCounts} />
-
       <main className="main">
         <Topbar
           breadcrumbs={crumbs}
@@ -216,8 +274,11 @@ export default function AppShell({
           searchPlaceholder={searchPlaceholder}
           actions={topbarActions}
           region={region}
+          notifications={notifications}
+          onOpenItem={handleOpenNotification}
+          onMarkAllRead={handleMarkAllRead}
+          onRefresh={() => router.reload()}
         />
-
         <div className="content">
           {(title || subtitle || actions) && (
             <div className="page-head">
@@ -228,7 +289,6 @@ export default function AppShell({
               {actions && <div className="page-meta">{actions}</div>}
             </div>
           )}
-
           {children}
         </div>
       </main>

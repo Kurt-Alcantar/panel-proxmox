@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 import AppShell, { ShellIcon } from '../components/AppShell'
+import { applySettings, loadSettings, saveSettings } from '../lib/panel'
 
 const FALLBACK_ALERTS = [
   { id: 'a1', title: 'Disk usage > 90% on srv-veeam-bkp', meta: 'srv-veeam-bkp · disk.used_pct > 90', ago: '8m ago', severity: 'critical' },
@@ -110,6 +111,7 @@ export default function OverviewPage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [metric, setMetric] = useState('cpu')
+  const [settings, setSettings] = useState({ accent: 'violet', radius: 16, dense: false, showTweaks: true })
 
   const clearSession = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -162,6 +164,9 @@ export default function OverviewPage() {
 
   useEffect(() => {
     loadData()
+    const current = loadSettings()
+    setSettings(current)
+    applySettings(current)
   }, [loadData])
 
   const overview = useMemo(() => {
@@ -253,7 +258,7 @@ export default function OverviewPage() {
           <span className="live-dot">LIVE · JS</span>
           <button className="chip active">Last 24h</button>
           <button className="btn btn-secondary"><ShellIcon name="export" /> Export</button>
-          <button className="btn btn-primary"><ShellIcon name="plus" /> Add asset</button>
+          <button className="btn btn-primary" onClick={() => router.push('/admin')}><ShellIcon name="plus" /> Add asset</button>
         </div>
       }
     >
@@ -342,7 +347,7 @@ export default function OverviewPage() {
             <section className="card overview-list-card">
               <div className="overview-card-head compact">
                 <h3><ShellIcon name="alerts" size={14} /> Active alerts</h3>
-                <button className="btn btn-ghost btn-sm">View all →</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => router.push('/alerts')}>View all →</button>
               </div>
               <div className="overview-list-wrap">
                 {overview.alerts.map(alert => (
@@ -381,23 +386,21 @@ export default function OverviewPage() {
             </section>
           </div>
 
-          <div className="overview-floating-tweaks card">
+          {settings.showTweaks && <div className="overview-floating-tweaks card">
             <div className="overview-tweaks-head">
               <strong>Tweaks</strong>
-              <button>×</button>
+              <button onClick={() => { const next = { ...settings, showTweaks: false }; setSettings(next); saveSettings(next) }}>×</button>
             </div>
             <div className="overview-tweaks-label">Accent hue</div>
             <div className="overview-swatch-row">
-              <span className="swatch cyan" />
-              <span className="swatch teal" />
-              <span className="swatch green" />
-              <span className="swatch violet active" />
-              <span className="swatch coral" />
+              {['cyan', 'teal', 'green', 'violet', 'coral'].map(accent => (
+                <button key={accent} className={`swatch ${accent} ${settings.accent === accent ? 'active' : ''}`} onClick={() => { const next = { ...settings, accent }; setSettings(next); saveSettings(next); applySettings(next) }} />
+              ))}
             </div>
             <div className="overview-tweaks-label">Radius</div>
-            <div className="overview-range"><span /><span className="knob" /></div>
-            <div className="overview-tweaks-foot">hyperox.redesign · dark · cyan 285°</div>
-          </div>
+            <input type="range" min="12" max="26" value={settings.radius} onChange={(e) => { const next = { ...settings, radius: Number(e.target.value) }; setSettings(next); saveSettings(next); applySettings(next) }} style={{ width: '100%' }} />
+            <div className="overview-tweaks-foot">hyperox.ui · dark · {settings.accent} · r{settings.radius}</div>
+          </div>}
 
           {search && (
             <div className="card cardPad" style={{ marginTop: 18 }}>

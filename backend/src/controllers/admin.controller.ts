@@ -577,6 +577,7 @@ export class AdminController {
 
     const email = this.toNullableString(body?.email);
     const tenantGroupId = this.toNullableString(body?.tenant_group_id);
+    const tenantId = this.toNullableString(body?.tenant_id);
     const username = this.toNullableString(body?.username);
     const firstName = this.toNullableString(body?.firstName);
     const lastName = this.toNullableString(body?.lastName);
@@ -615,6 +616,7 @@ export class AdminController {
         data: {
           ...(email !== undefined ? { email } : {}),
           ...(tenantGroupId !== undefined ? { tenant_group_id: tenantGroupId } : {}),
+          ...(tenantId !== undefined ? { tenant_id: tenantId } : {}),
         },
       });
 
@@ -684,7 +686,7 @@ export class AdminController {
         await tx.$executeRaw`
           UPDATE audit_logs
           SET user_id = NULL
-          WHERE user_id = ${userId}::uuid
+          WHERE user_id = ${userId}
         `;
         await tx.users.delete({ where: { id: userId } });
       });

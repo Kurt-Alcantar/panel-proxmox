@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AttackWorldMap from '../components/AttackWorldMap'
+import AttackTopList from '../components/AttackTopList'
 import { useRouter } from 'next/router'
 import AppShell, { ShellIcon } from '../components/AppShell'
 import { apiJson } from '../lib/auth'
@@ -74,6 +76,7 @@ export default function OverviewPage() {
   const [vms, setVms] = useState([])
   const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [attackMap, setAttackMap] = useState(null)
   const [search, setSearch] = useState('')
   const [metric, setMetric] = useState('cpu')
 
@@ -97,6 +100,20 @@ export default function OverviewPage() {
     return res.json()
   }, [])
   usePolling(fetchMetrics, (data) => { if (data) setMetrics(data) }, 30000, true)
+  
+  const fetchAttackMap = useCallback(async (signal) => {
+  const token = localStorage.getItem('token')
+  const res = await fetch('/api/overview/attack-map?range=24h', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    })
+    if (!res.ok) return null
+    return res.json()
+  }, [])
+
+  usePolling(fetchAttackMap, (data) => {
+    if (data) setAttackMap(data)
+  }, 30000, true)
 
   const overview = useMemo(() => {
     const totalAssets     = assets.length
@@ -227,6 +244,39 @@ export default function OverviewPage() {
                   <div className="overview-meta-row"><span>◎</span><span>{overview.externalOrigin} externo</span></div>
                 </div>
               </div>
+            </aside>
+          </div>
+          
+          <div className="overview-attack-grid">
+            <section className="card overview-attack-map-card">
+              <div className="overview-card-head">
+                <div>
+                  <h3>Global attack map</h3>
+                  <span className="ch-meta">Failed auth / suspicious origins · last 24h</span>
+                </div>
+              </div>
+
+              {!attackMap?.points?.length ? (
+                <div
+                  style={{
+                    minHeight: 420,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-4)',
+                    fontSize: 13,
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  Sin datos geolocalizados de ataques.
+                </div>
+              ) : (
+                <AttackWorldMap data={attackMap} />
+              )}
+            </section>
+
+            <aside className="card overview-attack-side-card">
+              <AttackTopList data={attackMap} />
             </aside>
           </div>
 

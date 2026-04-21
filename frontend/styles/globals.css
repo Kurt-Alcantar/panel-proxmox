@@ -1,0 +1,173 @@
+.overview-attack-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.8fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.overview-attack-map-card,
+.overview-attack-side-card {
+  min-height: 440px;
+}
+
+.attack-world-wrap {
+  position: relative;
+  min-height: 420px;
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(99,102,241,0.12), transparent 30%),
+    linear-gradient(180deg, rgba(10,14,22,0.92), rgba(9,12,20,0.98));
+}
+
+.attack-world-stage {
+  width: 100%;
+  height: 420px;
+}
+
+.attack-world-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.attack-world-summary {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.attack-world-summary > div {
+  pointer-events: auto;
+  background: rgba(8,12,20,0.72);
+  border: 1px solid rgba(148,163,184,0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  backdrop-filter: blur(10px);
+}
+
+.attack-world-summary span {
+  display: block;
+  font-size: 11px;
+  color: var(--text-4);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.attack-world-summary strong {
+  font-size: 16px;
+  color: var(--text-1);
+}
+
+.attack-world-tooltip {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  min-width: 260px;
+  max-width: 320px;
+  background: rgba(8,12,20,0.8);
+  border: 1px solid rgba(148,163,184,0.14);
+  border-radius: 14px;
+  padding: 12px 14px;
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.attack-tip-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin-bottom: 6px;
+}
+
+.attack-tip-row {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.attack-top-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.attack-top-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.attack-top-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(148,163,184,0.1);
+}
+
+.attack-top-ip {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-1);
+  margin-bottom: 4px;
+}
+
+.attack-top-meta {
+  font-size: 12px;
+  color: var(--text-4);
+}
+
+.attack-sev {
+  min-width: 44px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.sev-low {
+  background: rgba(52,199,89,0.16);
+  color: #34c759;
+}
+
+.sev-medium {
+  background: rgba(255,214,10,0.16);
+  color: #ffd60a;
+}
+
+.sev-high {
+  background: rgba(255,149,0,0.16);
+  color: #ff9500;
+}
+
+.sev-critical {
+  background: rgba(255,59,48,0.16);
+  color: #ff3b30;
+}
+
+@media (max-width: 1100px) {
+  .overview-attack-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .attack-world-tooltip {
+    position: static;
+    margin: 12px;
+  }
+
+  .attack-world-stage {
+    height: 360px;
+  }
+}

@@ -36,26 +36,10 @@ export default function FleetAgentsPage() {
 
   const policyMap = useMemo(() => Object.fromEntries(policies.map(p => [p.id, p.name])), [policies])
 
-  const statusDot = (status) => {
-    const colors = { online: 'var(--green)', offline: 'var(--red)', error: 'var(--amber)', degraded: 'var(--amber)' }
-    const c = colors[status] || 'var(--text-4)'
-    const isOnline = status === 'online'
-    return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <span style={{
-          width: 7, height: 7, borderRadius: '50%', background: c, flexShrink: 0,
-          boxShadow: isOnline ? `0 0 0 2px ${c}33` : 'none',
-          animation: isOnline ? 'pulse 2s infinite' : 'none',
-        }} />
-        <span style={{ fontSize: 12, color: c, fontWeight: 600 }}>{status || '—'}</span>
-      </span>
-    )
-  }
-
   const ts = (v) => {
     if (!v) return '—'
     const d = new Date(v)
-    if (isNaN(d)) return '—'
+    if (isNaN(d.getTime())) return '—'
     const mins = Math.round((Date.now() - d.getTime()) / 60000)
     if (mins < 1) return 'hace un momento'
     if (mins < 60) return `hace ${mins}m`
@@ -63,9 +47,7 @@ export default function FleetAgentsPage() {
     return d.toLocaleDateString('es-MX')
   }
 
-  const syncAgo = lastSync ? ts(lastSync) : '—'
-
-  const onlineCnt = agents.filter(a => a.status === 'online').length
+  const onlineCnt  = agents.filter(a => a.status === 'online').length
   const offlineCnt = agents.filter(a => a.status !== 'online').length
 
   return (
@@ -80,17 +62,16 @@ export default function FleetAgentsPage() {
 
       {error && <div className="errorBox" style={{ marginBottom: 16 }}>{error}</div>}
 
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <div className="gridStats">
         {[
-          { label: 'Total agentes', value: agents.length, color: 'var(--cyan)' },
-          { label: 'Online', value: onlineCnt, color: 'var(--green)' },
-          { label: 'Offline / Error', value: offlineCnt, color: 'var(--red)' },
-          { label: 'Políticas activas', value: policies.length, color: 'var(--text-2)' },
+          { label: 'Total agentes',    value: agents.length },
+          { label: 'Online',           value: onlineCnt },
+          { label: 'Offline / Error',  value: offlineCnt },
+          { label: 'Políticas activas',value: policies.length },
         ].map(s => (
-          <div key={s.label} className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 4 }}>{s.label}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: s.color }}>{s.value}</div>
+          <div key={s.label} className="card statCard">
+            <div className="statLabel">{s.label}</div>
+            <div className="statValue">{s.value}</div>
           </div>
         ))}
       </div>
@@ -98,50 +79,55 @@ export default function FleetAgentsPage() {
       <div className="card">
         <div className="overview-card-head compact">
           <h3>Agentes registrados</h3>
-          <span className="ch-meta" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span>{filtered.length} agentes</span>
-            <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Último sync: {syncAgo}</span>
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span className="ch-meta">{filtered.length} agentes</span>
+            {lastSync && (
+              <span style={{ fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+                Último sync: {ts(lastSync)}
+              </span>
+            )}
+          </div>
         </div>
         <div className="table-wrapp">
-          <table className="table" style={{ fontSize: 13 }}>
+          <table className="table">
             <thead>
-              <tr>
-                <th>Host</th>
-                <th>Estado</th>
-                <th>Política</th>
-                <th>Versión</th>
-                <th>Último check-in</th>
-              </tr>
+              <tr><th>Host</th><th>Estado</th><th>Política</th><th>Versión</th><th>Último check-in</th></tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan="5" className="muted" style={{ padding: 20, textAlign: 'center' }}>Cargando agentes...</td></tr>}
               {!loading && filtered.map(agent => {
-                const hostname = agent.local_metadata?.host?.hostname || agent.id
-                const version = agent.local_metadata?.elastic?.agent?.version || agent.agent?.version || '—'
-                const policyName = policyMap[agent.policy_id] || agent.policy_id || '—'
-                const checkin = agent.last_checkin || null
+                const hostname    = agent.local_metadata?.host?.hostname || agent.id
+                const version     = agent.local_metadata?.elastic?.agent?.version || agent.agent?.version || '—'
+                const policyName  = policyMap[agent.policy_id] || agent.policy_id || '—'
+                const isOnline    = agent.status === 'online'
+                const dotColor    = isOnline ? 'var(--green)' : agent.status === 'error' ? 'var(--amber)' : 'var(--red)'
                 return (
                   <tr key={agent.id || agent.agent?.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--text)' }}>
-                      {hostname}
-                      <div style={{ fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                        {(agent.id || '').slice(0, 16)}...
+                    <td>
+                      <strong>{hostname}</strong>
+                      <div style={{ fontSize: 10, color: 'var(--text-4)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        {(agent.id || '').slice(0, 18)}...
                       </div>
                     </td>
-                    <td>{statusDot(agent.status)}</td>
                     <td>
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: 'var(--surface-3)', color: 'var(--text-3)' }}>
-                        {policyName}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0,
+                          animation: isOnline ? 'pulse 2s infinite' : 'none',
+                        }} />
+                        <span style={{ fontSize: 12, color: dotColor, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                          {agent.status || '—'}
+                        </span>
                       </span>
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)' }}>{version}</td>
-                    <td style={{ color: 'var(--text-3)' }}>{ts(checkin)}</td>
+                    <td><span className="vmTag">{policyName}</span></td>
+                    <td><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{version}</span></td>
+                    <td>{ts(agent.last_checkin || null)}</td>
                   </tr>
                 )
               })}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan="5" className="muted" style={{ padding: 20, textAlign: 'center' }}>Sin resultados.</td></tr>
+                <tr><td colSpan="5" className="emptyState">Sin resultados.</td></tr>
               )}
             </tbody>
           </table>

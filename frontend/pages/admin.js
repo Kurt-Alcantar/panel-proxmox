@@ -3,40 +3,13 @@ import { useRouter } from 'next/router'
 import AppShell from '../components/AppShell'
 import { apiJson } from '../lib/auth'
 
-// ─── Estilos base ────────────────────────────────────────────────
-
-const inp = {
-  width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)',
-  borderRadius: 'var(--r-sm)', padding: '8px 10px', fontSize: 13, color: 'var(--text)',
-  outline: 'none', boxSizing: 'border-box',
-}
-const btn = (variant = 'primary') => ({
-  padding: '8px 18px', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer',
-  borderRadius: 'var(--r-sm)',
-  ...(variant === 'primary' ? { background: 'var(--cyan)', color: '#fff' } : {}),
-  ...(variant === 'ghost'   ? { background: 'var(--surface-3)', color: 'var(--text-2)', border: '1px solid var(--border)' } : {}),
-  ...(variant === 'danger'  ? { background: 'rgba(239,68,68,0.15)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.3)' } : {}),
-})
-const lbl = { fontSize: 12, color: 'var(--text-4)', display: 'block', marginBottom: 4 }
-
-function Field({ label, children }) {
-  return <div style={{ display: 'grid', gap: 4 }}><label style={lbl}>{label}</label>{children}</div>
-}
-
-function Alert({ type = 'error', children }) {
-  const colors = { error: ['var(--red-dim)', 'var(--red)'], ok: ['var(--green-dim)', 'var(--green)'] }
-  const [bg, color] = colors[type] || colors.error
-  return <div style={{ background: bg, color, border: `1px solid ${color}`, borderRadius: 'var(--r-sm)', padding: '10px 14px', fontSize: 13 }}>{children}</div>
-}
-
-// ─── Wizard Shell ─────────────────────────────────────────────────
+// ─── Wizard ──────────────────────────────────────────────────────
 
 function Wizard({ steps, onClose, onFinish, title }) {
   const [step, setStep] = useState(0)
   const [data, setData] = useState({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-
   const current = steps[step]
   const isLast = step === steps.length - 1
 
@@ -46,47 +19,31 @@ function Wizard({ steps, onClose, onFinish, title }) {
     setData(merged)
     if (isLast) {
       setBusy(true)
-      try {
-        await onFinish(merged)
-        onClose()
-      } catch (e) {
-        setErr(e.message || 'Error al guardar')
-      } finally {
-        setBusy(false)
-      }
+      try { await onFinish(merged); onClose() }
+      catch (e) { setErr(e.message || 'Error al guardar') }
+      finally { setBusy(false) }
     } else {
       setStep(s => s + 1)
     }
   }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
-    }}>
-      <div style={{
-        background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)',
-        width: '100%', maxWidth: 540, boxShadow: 'var(--shadow-lg)',
-      }}>
-        {/* Header */}
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div className="card" style={{ width: '100%', maxWidth: 520 }}>
+        <div className="card-head">
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{title}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 2 }}>Paso {step + 1} de {steps.length} · {current.label}</div>
+            <h3 style={{ fontSize: 15 }}>{title}</h3>
+            <div className="ch-meta">Paso {step + 1} de {steps.length} · {current.label}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
-
-        {/* Stepper */}
-        <div style={{ display: 'flex', padding: '14px 22px 0', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 4, padding: '10px 18px 0' }}>
           {steps.map((s, i) => (
-            <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? 'var(--cyan)' : 'var(--surface-3)', transition: 'background 0.2s' }} />
+            <div key={i} style={{ flex: 1, height: 2, borderRadius: 2, background: i <= step ? 'var(--cyan)' : 'var(--border)', transition: 'background 0.2s' }} />
           ))}
         </div>
-
-        {/* Contenido */}
-        <div style={{ padding: '20px 22px' }}>
-          {err && <div style={{ marginBottom: 14 }}><Alert type="error">{err}</Alert></div>}
+        <div className="cardPad">
+          {err && <div className="errorBox" style={{ marginBottom: 14 }}>{err}</div>}
           <current.Component data={data} onNext={next} onBack={step > 0 ? () => { setErr(''); setStep(s => s - 1) } : null} busy={busy} isLast={isLast} />
         </div>
       </div>
@@ -94,26 +51,24 @@ function Wizard({ steps, onClose, onFinish, title }) {
   )
 }
 
-// ─── Wizard: Nuevo Tenant ────────────────────────────────────────
+// ─── Pasos wizard Tenant ─────────────────────────────────────────
 
 function TenantStep1({ data, onNext }) {
   const [form, setForm] = useState({ code: data.code || '', name: data.name || '', type: data.type || 'client' })
-  const s = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
+  const s = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <div style={{ fontSize: 13, color: 'var(--text-2)' }}>Define el tipo y datos básicos del tenant.</div>
-      <Field label="Tipo *">
-        <select style={inp} value={form.type} onChange={s('type')}>
-          <option value="partner">Partner (ej. Conestra) — ve activos de sus clientes</option>
-          <option value="client">Cliente final (ej. G-One) — ve solo sus activos</option>
+    <div className="adminFormGrid">
+      <label className="authField" style={{ gridColumn: '1 / -1' }}>
+        <span>Tipo *</span>
+        <select className="authInput" value={form.type} onChange={s('type')}>
+          <option value="partner">Partner — ve activos de sus clientes</option>
+          <option value="client">Cliente final — ve solo sus activos</option>
         </select>
-      </Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Código *"><input style={inp} value={form.code} onChange={s('code')} placeholder="CONESTRA" /></Field>
-        <Field label="Nombre *"><input style={inp} value={form.name} onChange={s('name')} placeholder="Conestra S.A." /></Field>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-        <button style={btn('primary')} onClick={() => { if (!form.code || !form.name) return; onNext(form) }}>Siguiente →</button>
+      </label>
+      <label className="authField"><span>Código *</span><input className="authInput" value={form.code} onChange={s('code')} placeholder="CONESTRA" /></label>
+      <label className="authField"><span>Nombre *</span><input className="authInput" value={form.name} onChange={s('name')} placeholder="Conestra S.A." /></label>
+      <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn btn-primary" onClick={() => { if (form.code && form.name) onNext(form) }}>Siguiente →</button>
       </div>
     </div>
   )
@@ -123,59 +78,47 @@ function TenantStep2({ data, onNext, onBack, tenants }) {
   const [parentId, setParentId] = useState(data.parent_tenant_id || '')
   const partners = (tenants || []).filter(t => t.type === 'partner' || t.type === 'platform')
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-        {data.type === 'client' ? 'Asigna el partner responsable de este cliente.' : 'Los partners no requieren padre. Confirma para continuar.'}
-      </div>
+    <div className="adminFormGrid" style={{ gridTemplateColumns: '1fr' }}>
       {data.type === 'client' && (
-        <Field label="Partner padre *">
-          <select style={inp} value={parentId} onChange={e => setParentId(e.target.value)}>
+        <label className="authField">
+          <span>Partner padre *</span>
+          <select className="authInput" value={parentId} onChange={e => setParentId(e.target.value)}>
             <option value="">Selecciona un partner</option>
             {partners.map(t => <option key={t.id} value={t.id}>{t.name} ({t.type})</option>)}
           </select>
-        </Field>
+        </label>
       )}
-      <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
-        <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6 }}>Resumen</div>
-        <div style={{ fontSize: 13, color: 'var(--text)', display: 'grid', gap: 4 }}>
-          <span>Tipo: <strong>{data.type}</strong></span>
-          <span>Código: <strong>{data.code}</strong></span>
-          <span>Nombre: <strong>{data.name}</strong></span>
-          {data.type === 'client' && parentId && <span>Partner: <strong>{partners.find(t => t.id === parentId)?.name || '—'}</strong></span>}
-        </div>
+      <div className="card cardPad" style={{ background: 'var(--surface-2)' }}>
+        <div className="statLabel">Resumen</div>
+        {[['Tipo', data.type], ['Código', data.code], ['Nombre', data.name], ...(data.type === 'client' && parentId ? [['Partner', partners.find(t => t.id === parentId)?.name || '—']] : [])].map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 6 }}>
+            <span style={{ color: 'var(--text-3)' }}>{k}</span><strong>{v}</strong>
+          </div>
+        ))}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
-        <button style={btn('ghost')} onClick={onBack}>← Atrás</button>
-        <button style={btn('primary')} onClick={() => {
-          if (data.type === 'client' && !parentId) return
-          onNext({ parent_tenant_id: parentId || null })
-        }}>Crear tenant ✓</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <button className="btn btn-ghost" onClick={onBack}>← Atrás</button>
+        <button className="btn btn-primary" onClick={() => { if (data.type !== 'client' || parentId) onNext({ parent_tenant_id: parentId || null }) }}>Crear tenant ✓</button>
       </div>
     </div>
   )
 }
 
-// ─── Wizard: Nuevo Usuario ────────────────────────────────────────
+// ─── Pasos wizard Usuario ────────────────────────────────────────
 
 function UserStep1({ data, onNext }) {
-  const [form, setForm] = useState({
-    username: data.username || '', email: data.email || '',
-    firstName: data.firstName || '', lastName: data.lastName || '', password: data.password || '',
-  })
-  const s = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
+  const [form, setForm] = useState({ username: data.username || '', email: data.email || '', firstName: data.firstName || '', lastName: data.lastName || '', password: data.password || '' })
+  const s = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
   const valid = form.username && form.email && form.password.length >= 8
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ fontSize: 13, color: 'var(--text-2)' }}>Datos de la cuenta en Keycloak.</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Nombre"><input style={inp} value={form.firstName} onChange={s('firstName')} placeholder="Kurt" /></Field>
-        <Field label="Apellidos"><input style={inp} value={form.lastName} onChange={s('lastName')} placeholder="Alcantar" /></Field>
-      </div>
-      <Field label="Username *"><input style={inp} value={form.username} onChange={s('username')} placeholder="k.alcantar" /></Field>
-      <Field label="Email *"><input style={inp} type="email" value={form.email} onChange={s('email')} placeholder="k@empresa.com" /></Field>
-      <Field label="Contraseña inicial * (mín. 8 caracteres)"><input style={inp} type="password" value={form.password} onChange={s('password')} /></Field>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-        <button style={{ ...btn('primary'), opacity: valid ? 1 : 0.5 }} onClick={() => { if (valid) onNext(form) }}>Siguiente →</button>
+    <div className="adminFormGrid">
+      <label className="authField"><span>Nombre</span><input className="authInput" value={form.firstName} onChange={s('firstName')} placeholder="Kurt" /></label>
+      <label className="authField"><span>Apellidos</span><input className="authInput" value={form.lastName} onChange={s('lastName')} placeholder="Alcantar" /></label>
+      <label className="authField"><span>Username *</span><input className="authInput" value={form.username} onChange={s('username')} placeholder="k.alcantar" /></label>
+      <label className="authField"><span>Email *</span><input className="authInput" type="email" value={form.email} onChange={s('email')} placeholder="k@empresa.com" /></label>
+      <label className="authField" style={{ gridColumn: '1 / -1' }}><span>Contraseña inicial * (mín. 8)</span><input className="authInput" type="password" value={form.password} onChange={s('password')} /></label>
+      <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn btn-primary" disabled={!valid} onClick={() => { if (valid) onNext(form) }}>Siguiente →</button>
       </div>
     </div>
   )
@@ -184,41 +127,27 @@ function UserStep1({ data, onNext }) {
 function UserStep2({ data, onNext, onBack, tenants, roles }) {
   const [tenantId, setTenantId] = useState(data.tenant_id || '')
   const [roleIds, setRoleIds] = useState(data.role_ids || [])
-  const toggleRole = (id) => setRoleIds(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id])
+  const toggleRole = id => setRoleIds(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id])
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <div style={{ fontSize: 13, color: 'var(--text-2)' }}>Asigna el tenant y los permisos del usuario.</div>
-      <Field label="Tenant *">
-        <select style={inp} value={tenantId} onChange={e => setTenantId(e.target.value)}>
+    <div className="adminFormGrid" style={{ gridTemplateColumns: '1fr' }}>
+      <label className="authField">
+        <span>Tenant *</span>
+        <select className="authInput" value={tenantId} onChange={e => setTenantId(e.target.value)}>
           <option value="">Selecciona un tenant</option>
-          {(tenants || []).map(t => (
-            <option key={t.id} value={t.id}>{t.name} ({t.type || 'client'})</option>
-          ))}
+          {(tenants || []).map(t => <option key={t.id} value={t.id}>{t.name} ({t.type || 'client'})</option>)}
         </select>
-      </Field>
+      </label>
       <div>
-        <label style={lbl}>Roles *</label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="statLabel">Roles *</div>
+        <div className="poolFilterRow">
           {(roles || []).map(role => (
-            <label key={role.id} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px',
-              border: `1px solid ${roleIds.includes(role.id) ? 'var(--cyan)' : 'var(--border)'}`,
-              borderRadius: 'var(--r-sm)', cursor: 'pointer', fontSize: 12,
-              background: roleIds.includes(role.id) ? 'var(--cyan-dim)' : 'var(--surface-2)',
-              color: roleIds.includes(role.id) ? 'var(--cyan)' : 'var(--text-2)',
-            }}>
-              <input type="checkbox" checked={roleIds.includes(role.id)} onChange={() => toggleRole(role.id)} style={{ display: 'none' }} />
-              {role.code}
-            </label>
+            <button key={role.id} className={`chip${roleIds.includes(role.id) ? ' active' : ''}`} onClick={() => toggleRole(role.id)}>{role.code}</button>
           ))}
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
-        <button style={btn('ghost')} onClick={onBack}>← Atrás</button>
-        <button style={btn('primary')} onClick={() => {
-          if (!tenantId || !roleIds.length) return
-          onNext({ tenant_id: tenantId, role_ids: roleIds })
-        }}>Siguiente →</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <button className="btn btn-ghost" onClick={onBack}>← Atrás</button>
+        <button className="btn btn-primary" disabled={!tenantId || !roleIds.length} onClick={() => { if (tenantId && roleIds.length) onNext({ tenant_id: tenantId, role_ids: roleIds }) }}>Siguiente →</button>
       </div>
     </div>
   )
@@ -228,44 +157,35 @@ function UserStep3({ data, onNext, onBack, tenants, roles, busy }) {
   const tenant = (tenants || []).find(t => t.id === data.tenant_id)
   const userRoles = (roles || []).filter(r => (data.role_ids || []).includes(r.id))
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <div style={{ fontSize: 13, color: 'var(--text-2)' }}>Confirma los datos antes de crear el usuario en Keycloak.</div>
-      <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--r-md)', padding: '14px 16px', display: 'grid', gap: 8 }}>
-        {[
-          ['Nombre',   [data.firstName, data.lastName].filter(Boolean).join(' ') || '—'],
-          ['Username', data.username],
-          ['Email',    data.email],
-          ['Tenant',   tenant ? `${tenant.name} (${tenant.type})` : '—'],
-          ['Roles',    userRoles.map(r => r.code).join(', ') || '—'],
-        ].map(([k, v]) => (
-          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-            <span style={{ color: 'var(--text-4)' }}>{k}</span>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{v}</span>
+    <div className="adminFormGrid" style={{ gridTemplateColumns: '1fr' }}>
+      <div className="card cardPad" style={{ background: 'var(--surface-2)' }}>
+        <div className="statLabel">Confirmación</div>
+        {[['Nombre', [data.firstName, data.lastName].filter(Boolean).join(' ') || '—'], ['Username', data.username], ['Email', data.email], ['Tenant', tenant ? `${tenant.name} (${tenant.type})` : '—'], ['Roles', userRoles.map(r => r.code).join(', ') || '—']].map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 8 }}>
+            <span style={{ color: 'var(--text-3)' }}>{k}</span><strong>{v}</strong>
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
-        <button style={btn('ghost')} onClick={onBack} disabled={busy}>← Atrás</button>
-        <button style={btn('primary')} onClick={() => onNext({})} disabled={busy}>
-          {busy ? 'Creando...' : 'Crear usuario ✓'}
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <button className="btn btn-ghost" onClick={onBack} disabled={busy}>← Atrás</button>
+        <button className="btn btn-primary" onClick={() => onNext({})} disabled={busy}>{busy ? 'Creando...' : 'Crear usuario ✓'}</button>
       </div>
     </div>
   )
 }
 
-// ─── Página principal Admin ───────────────────────────────────────
+// ─── Página principal ─────────────────────────────────────────────
 
 export default function AdminPage() {
   const router = useRouter()
-  const [data, setData] = useState({ tenants: [], roles: [], users: [], assets: [] })
+  const [data, setData] = useState({ tenants: [], roles: [], users: [], vms: [], assets: [] })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState({ type: '', text: '' })
-  const [wizard, setWizard] = useState(null) // 'tenant' | 'user' | null
-  const [activeTab, setActiveTab] = useState('tenants') // tenants | users | assets | vms
+  const [wizard, setWizard] = useState(null)
+  const [activeTab, setActiveTab] = useState('tenants')
 
-  const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 4000) }
+  const flash = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 4000) }
 
   const load = async () => {
     setLoading(true)
@@ -274,270 +194,170 @@ export default function AdminPage() {
         apiJson('/api/admin/bootstrap'),
         apiJson('/api/admin/assets').catch(() => []),
       ])
-      setData({
-        tenants: bootstrap?.tenants || [],
-        roles:   bootstrap?.roles   || [],
-        users:   bootstrap?.users   || [],
-        vms:     bootstrap?.vms     || [],
-        assets:  Array.isArray(assets) ? assets : [],
-      })
-    } catch (err) {
-      showMsg('error', err.message || 'Error cargando datos')
-    } finally {
-      setLoading(false)
-    }
+      setData({ tenants: bootstrap?.tenants || [], roles: bootstrap?.roles || [], users: bootstrap?.users || [], vms: bootstrap?.vms || [], assets: Array.isArray(assets) ? assets : [] })
+    } catch (err) { flash('err', err.message || 'Error cargando datos') }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
 
-  const request = async (url, options = {}) => {
-    const res = await apiJson(url, options)
-    return res
+  const handleCreateTenant = async (fd) => {
+    await apiJson('/api/admin/tenants', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: fd.code, name: fd.name, type: fd.type, parent_tenant_id: fd.parent_tenant_id || null, status: 'ACTIVE' }) })
+    await load(); flash('ok', `Tenant "${fd.name}" creado.`)
   }
-
-  // Wizard tenant
-  const handleCreateTenant = async (formData) => {
-    await request('/api/admin/tenants', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: formData.code, name: formData.name, type: formData.type, parent_tenant_id: formData.parent_tenant_id || null, status: 'ACTIVE' }),
-    })
-    await load()
-    showMsg('ok', `Tenant "${formData.name}" creado correctamente.`)
+  const handleCreateUser = async (fd) => {
+    await apiJson('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: fd.username, email: fd.email, firstName: fd.firstName, lastName: fd.lastName, password: fd.password, tenant_id: fd.tenant_id, role_ids: fd.role_ids }) })
+    await load(); flash('ok', `Usuario "${fd.email}" creado.`)
   }
-
-  // Wizard usuario
-  const handleCreateUser = async (formData) => {
-    await request('/api/admin/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: formData.username, email: formData.email,
-        firstName: formData.firstName, lastName: formData.lastName,
-        password: formData.password, tenant_id: formData.tenant_id,
-        role_ids: formData.role_ids,
-      }),
-    })
-    await load()
-    showMsg('ok', `Usuario "${formData.email}" creado correctamente.`)
-  }
-
-  const deleteTenant = async (tenant) => {
-    if (!window.confirm(`¿Eliminar tenant "${tenant.name}"?`)) return
+  const deleteTenant = async (t) => {
+    if (!window.confirm(`¿Eliminar tenant "${t.name}"?`)) return
     setBusy(true)
-    try {
-      await request(`/api/admin/tenants/${tenant.id}`, { method: 'DELETE' })
-      await load()
-      showMsg('ok', 'Tenant eliminado.')
-    } catch (err) { showMsg('error', err.message) } finally { setBusy(false) }
+    try { await apiJson(`/api/admin/tenants/${t.id}`, { method: 'DELETE' }); await load(); flash('ok', 'Tenant eliminado.') }
+    catch (err) { flash('err', err.message) } finally { setBusy(false) }
   }
-
-  const deleteUser = async (user) => {
-    if (!window.confirm(`¿Eliminar usuario "${user.email}"? Se borrará también de Keycloak.`)) return
+  const deleteUser = async (u) => {
+    if (!window.confirm(`¿Eliminar usuario "${u.email}"? Se borrará de Keycloak.`)) return
     setBusy(true)
-    try {
-      await request(`/api/admin/users/${user.id}`, { method: 'DELETE' })
-      await load()
-      showMsg('ok', 'Usuario eliminado.')
-    } catch (err) { showMsg('error', err.message) } finally { setBusy(false) }
+    try { await apiJson(`/api/admin/users/${u.id}`, { method: 'DELETE' }); await load(); flash('ok', 'Usuario eliminado.') }
+    catch (err) { flash('err', err.message) } finally { setBusy(false) }
   }
-
   const assignAsset = async (assetId, tenantId) => {
     try {
-      if (tenantId) {
-        await request(`/api/admin/assets/${assetId}/assign`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tenantId }),
-        })
-      } else {
-        await request(`/api/admin/assets/${assetId}/assign`, { method: 'DELETE' })
-      }
-      const updated = await request('/api/admin/assets').catch(() => [])
+      if (tenantId) await apiJson(`/api/admin/assets/${assetId}/assign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId }) })
+      else await apiJson(`/api/admin/assets/${assetId}/assign`, { method: 'DELETE' })
+      const updated = await apiJson('/api/admin/assets').catch(() => [])
       setData(prev => ({ ...prev, assets: Array.isArray(updated) ? updated : prev.assets }))
-    } catch (err) { showMsg('error', err.message) }
+    } catch (err) { flash('err', err.message) }
   }
-
   const syncAll = async () => {
     setBusy(true)
-    try {
-      await request('/api/admin/sync-all', { method: 'POST' })
-      await load()
-      showMsg('ok', 'Sincronización completada.')
-    } catch (err) { showMsg('error', err.message) } finally { setBusy(false) }
+    try { await apiJson('/api/admin/sync-all', { method: 'POST' }); await load(); flash('ok', 'Sincronización completada.') }
+    catch (err) { flash('err', err.message) } finally { setBusy(false) }
   }
 
   const typeBadge = (type) => {
-    const cfg = { platform: ['var(--cyan)', 'var(--cyan-dim)'], partner: ['#93c5fd','rgba(147,197,253,0.15)'], client: ['var(--green)','var(--green-dim)'] }
-    const [color, bg] = cfg[type] || ['var(--text-4)', 'var(--surface-3)']
-    return <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-xs)', color, background: bg, letterSpacing: '0.04em' }}>{type}</span>
+    const cfg = { platform: 'running', partner: 'paused', client: 'unknown' }
+    return <span className={`vm-status ${cfg[type] || 'unknown'}`}>{type}</span>
   }
 
   const clientTenants = useMemo(() => data.tenants.filter(t => t.type === 'client'), [data.tenants])
+
+  const tabs = [['tenants','Tenants',data.tenants.length],['users','Usuarios',data.users.length],['assets','Activos',data.assets.length],['vms','VMs',(data.vms||[]).length]]
 
   return (
     <AppShell
       title="Tenants & access"
       subtitle="Gestión de tenants, usuarios y asignación de activos"
       actions={
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={btn('ghost')} onClick={syncAll} disabled={busy || loading}>{busy ? 'Procesando...' : 'Sync Proxmox'}</button>
-          <button style={btn('ghost')} onClick={load} disabled={loading}>Recargar</button>
-          <button style={btn('primary')} onClick={() => setWizard('user')}>+ Usuario</button>
-          <button style={btn('primary')} onClick={() => setWizard('tenant')} style={{ ...btn('primary'), background: 'var(--surface-3)', color: 'var(--text)', border: '1px solid var(--border)' }}>+ Tenant</button>
+        <div className="overview-toolbar">
+          <button className="btn btn-secondary" onClick={syncAll} disabled={busy || loading}>{busy ? 'Procesando...' : 'Sync Proxmox'}</button>
+          <button className="btn btn-secondary" onClick={load} disabled={loading}>Recargar</button>
+          <button className="btn btn-secondary" onClick={() => setWizard('tenant')}>+ Tenant</button>
+          <button className="btn btn-primary" onClick={() => setWizard('user')}>+ Usuario</button>
         </div>
       }
     >
-      {/* Wizards */}
       {wizard === 'tenant' && (
-        <Wizard
-          title="Nuevo tenant"
-          onClose={() => setWizard(null)}
-          onFinish={handleCreateTenant}
+        <Wizard title="Nuevo tenant" onClose={() => setWizard(null)} onFinish={handleCreateTenant}
           steps={[
-            { label: 'Tipo y datos', Component: (p) => <TenantStep1 {...p} /> },
-            { label: 'Confirmación', Component: (p) => <TenantStep2 {...p} tenants={data.tenants} /> },
-          ]}
-        />
+            { label: 'Tipo y datos', Component: p => <TenantStep1 {...p} /> },
+            { label: 'Confirmación', Component: p => <TenantStep2 {...p} tenants={data.tenants} /> },
+          ]} />
       )}
       {wizard === 'user' && (
-        <Wizard
-          title="Nuevo usuario"
-          onClose={() => setWizard(null)}
-          onFinish={handleCreateUser}
+        <Wizard title="Nuevo usuario" onClose={() => setWizard(null)} onFinish={handleCreateUser}
           steps={[
-            { label: 'Datos de cuenta',  Component: (p) => <UserStep1 {...p} /> },
-            { label: 'Tenant y roles',   Component: (p) => <UserStep2 {...p} tenants={data.tenants} roles={data.roles} /> },
-            { label: 'Confirmación',     Component: (p) => <UserStep3 {...p} tenants={data.tenants} roles={data.roles} /> },
-          ]}
-        />
+            { label: 'Datos de cuenta', Component: p => <UserStep1 {...p} /> },
+            { label: 'Tenant y roles',  Component: p => <UserStep2 {...p} tenants={data.tenants} roles={data.roles} /> },
+            { label: 'Confirmación',    Component: p => <UserStep3 {...p} tenants={data.tenants} roles={data.roles} /> },
+          ]} />
       )}
 
-      {msg.text && <div style={{ marginBottom: 14 }}><Alert type={msg.type === 'ok' ? 'ok' : 'error'}>{msg.text}</Alert></div>}
+      {msg.text && <div className={msg.type === 'ok' ? 'card cardPad' : 'errorBox'} style={{ marginBottom: 14, ...(msg.type === 'ok' ? { color: 'var(--green)', borderColor: 'var(--green)', background: 'var(--green-dim)' } : {}) }}>{msg.text}</div>}
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 2, background: 'var(--surface-2)', borderRadius: 'var(--r-md)', padding: 3, width: 'fit-content', marginBottom: 20 }}>
-        {[['tenants','Tenants'],['users','Usuarios'],['assets','Activos'],['vms','VMs']].map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key)} style={{
-            padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
-            borderRadius: 'var(--r-sm)', background: activeTab === key ? 'var(--surface-3)' : 'transparent',
-            color: activeTab === key ? 'var(--text)' : 'var(--text-3)',
-          }}>
-            {label}
-            {key === 'tenants' && <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.7 }}>{data.tenants.length}</span>}
-            {key === 'users'   && <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.7 }}>{data.users.length}</span>}
-            {key === 'assets'  && <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.7 }}>{data.assets.length}</span>}
+      <div className="poolFilterRow" style={{ marginBottom: 18 }}>
+        {tabs.map(([key, label, count]) => (
+          <button key={key} className={`chip${activeTab === key ? ' active' : ''}`} onClick={() => setActiveTab(key)}>
+            {label} <span className="chip-count">{count}</span>
           </button>
         ))}
       </div>
 
-      {loading ? (
-        <div className="card cardPad"><p className="muted">Cargando...</p></div>
-      ) : (
+      {loading ? <div className="card cardPad"><p className="muted">Cargando...</p></div> : (
         <>
-          {/* ── Tab Tenants ── */}
           {activeTab === 'tenants' && (
             <div className="card">
-              <div className="overview-card-head compact">
-                <h3>Jerarquía de tenants</h3>
-                <span className="ch-meta">{data.tenants.length} tenants</span>
-              </div>
+              <div className="overview-card-head compact"><h3>Jerarquía de tenants</h3><span className="ch-meta">{data.tenants.length} tenants</span></div>
               <div className="table-wrapp">
-                <table className="table" style={{ fontSize: 13 }}>
+                <table className="table">
                   <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Parent</th><th>Estado</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {data.tenants.map(t => {
                       const parent = data.tenants.find(p => p.id === t.parent_tenant_id)
                       return (
                         <tr key={t.id}>
-                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)' }}>{t.code}</td>
-                          <td style={{ fontWeight: 600, color: 'var(--text)' }}>{t.name}</td>
+                          <td><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{t.code}</span></td>
+                          <td><strong>{t.name}</strong></td>
                           <td>{typeBadge(t.type)}</td>
-                          <td style={{ color: 'var(--text-3)', fontSize: 12 }}>{parent?.name || '—'}</td>
+                          <td>{parent?.name || '—'}</td>
                           <td><span style={{ fontSize: 11, color: t.status === 'ACTIVE' ? 'var(--green)' : 'var(--red)' }}>{t.status}</span></td>
-                          <td>
-                            {t.type !== 'platform' && (
-                              <button style={{ ...btn('danger'), padding: '4px 10px', fontSize: 11 }} onClick={() => deleteTenant(t)} disabled={busy}>Eliminar</button>
-                            )}
-                          </td>
+                          <td>{t.type !== 'platform' && <button className="btn btn-danger btn-sm" onClick={() => deleteTenant(t)} disabled={busy}>Eliminar</button>}</td>
                         </tr>
                       )
                     })}
-                    {!data.tenants.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 20 }}>Sin tenants</td></tr>}
+                    {!data.tenants.length && <tr><td colSpan={6} className="emptyState">Sin tenants</td></tr>}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* ── Tab Usuarios ── */}
           {activeTab === 'users' && (
             <div className="card">
-              <div className="overview-card-head compact">
-                <h3>Usuarios del panel</h3>
-                <span className="ch-meta">{data.users.length} usuarios</span>
-              </div>
+              <div className="overview-card-head compact"><h3>Usuarios del panel</h3><span className="ch-meta">{data.users.length} usuarios</span></div>
               <div className="table-wrapp">
-                <table className="table" style={{ fontSize: 13 }}>
+                <table className="table">
                   <thead><tr><th>Email</th><th>Tenant</th><th>Tipo</th><th>Roles</th><th>Acciones</th></tr></thead>
                   <tbody>
                     {data.users.map(user => (
                       <tr key={user.id}>
                         <td>
-                          <div style={{ fontWeight: 600, color: 'var(--text)' }}>{user.email}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>{user.id?.slice(0, 16)}...</div>
+                          <strong>{user.email}</strong>
+                          <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-4)' }}>{user.id?.slice(0, 16)}...</div>
                         </td>
-                        <td style={{ color: 'var(--text-2)' }}>{user.tenant_name || user.tenant?.name || '—'}</td>
-                        <td>{user.tenant_type ? typeBadge(user.tenant_type) : <span style={{ color: 'var(--text-4)', fontSize: 11 }}>—</span>}</td>
+                        <td>{user.tenant_name || user.tenant?.name || '—'}</td>
+                        <td>{user.tenant_type ? typeBadge(user.tenant_type) : '—'}</td>
                         <td>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {(user.roles || []).map(r => (
-                              <span key={r.id || r} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 'var(--r-xs)', background: 'var(--cyan-dim)', color: 'var(--cyan)', fontWeight: 700 }}>{r.code || r}</span>
-                            ))}
+                          <div className="vmCardTags">
+                            {(user.roles || []).map(r => <span key={r.id || r} className="vmTag">{r.code || r}</span>)}
                           </div>
                         </td>
-                        <td>
-                          <button style={{ ...btn('danger'), padding: '4px 10px', fontSize: 11 }} onClick={() => deleteUser(user)} disabled={busy}>Eliminar</button>
-                        </td>
+                        <td><button className="btn btn-danger btn-sm" onClick={() => deleteUser(user)} disabled={busy}>Eliminar</button></td>
                       </tr>
                     ))}
-                    {!data.users.length && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 20 }}>Sin usuarios</td></tr>}
+                    {!data.users.length && <tr><td colSpan={5} className="emptyState">Sin usuarios</td></tr>}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* ── Tab Activos ── */}
           {activeTab === 'assets' && (
             <div className="card">
-              <div className="overview-card-head compact">
-                <h3>Asignación de activos a clientes</h3>
-                <span className="ch-meta">{data.assets.length} activos</span>
-              </div>
+              <div className="overview-card-head compact"><h3>Asignación de activos a clientes</h3><span className="ch-meta">{data.assets.length} activos</span></div>
               <div className="table-wrapp">
-                <table className="table" style={{ fontSize: 13 }}>
+                <table className="table">
                   <thead><tr><th>Activo</th><th>OS</th><th>Estado</th><th>Cliente asignado</th></tr></thead>
                   <tbody>
                     {data.assets.map(asset => {
                       const assignment = asset.tenant_assignments?.[0]
                       return (
                         <tr key={asset.id}>
+                          <td><strong>{asset.display_name || asset.host_name}</strong><div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-4)' }}>{asset.agent_version}</div></td>
+                          <td>{asset.os_type || '—'}</td>
+                          <td><span className={`vm-status ${asset.agent_status === 'online' ? 'running' : 'stopped'}`}>{asset.agent_status || '—'}</span></td>
                           <td>
-                            <div style={{ fontWeight: 600, color: 'var(--text)' }}>{asset.display_name || asset.host_name}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>{asset.agent_version}</div>
-                          </td>
-                          <td style={{ color: 'var(--text-3)' }}>{asset.os_type || '—'}</td>
-                          <td>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: asset.agent_status === 'online' ? 'var(--green)' : 'var(--red)' }}>
-                              {asset.agent_status || '—'}
-                            </span>
-                          </td>
-                          <td>
-                            <select
-                              style={{ ...inp, width: 200, fontSize: 12 }}
-                              value={assignment?.tenant_id || ''}
-                              onChange={e => assignAsset(asset.id, e.target.value)}
-                            >
+                            <select className="select" style={{ minWidth: 180 }} value={assignment?.tenant_id || ''} onChange={e => assignAsset(asset.id, e.target.value)}>
                               <option value="">Sin asignar</option>
                               {clientTenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                             </select>
@@ -545,35 +365,30 @@ export default function AdminPage() {
                         </tr>
                       )
                     })}
-                    {!data.assets.length && <tr><td colSpan={4} className="muted" style={{ textAlign: 'center', padding: 20 }}>Sin activos</td></tr>}
+                    {!data.assets.length && <tr><td colSpan={4} className="emptyState">Sin activos</td></tr>}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* ── Tab VMs ── */}
           {activeTab === 'vms' && (
             <div className="card">
-              <div className="overview-card-head compact">
-                <h3>Inventario VM</h3>
-                <span className="ch-meta">{(data.vms || []).length} VMs</span>
-              </div>
+              <div className="overview-card-head compact"><h3>Inventario VM</h3><span className="ch-meta">{(data.vms||[]).length} VMs</span></div>
               <div className="table-wrapp">
-                <table className="table" style={{ fontSize: 13 }}>
-                  <thead><tr><th>VM</th><th>VMID</th><th>Nodo</th><th>Pool/Grupo</th><th>Estado</th><th>OS</th></tr></thead>
+                <table className="table">
+                  <thead><tr><th>VM</th><th>VMID</th><th>Nodo</th><th>Grupo</th><th>Estado</th></tr></thead>
                   <tbody>
-                    {(data.vms || []).map(vm => (
+                    {(data.vms||[]).map(vm => (
                       <tr key={vm.vmid} style={{ cursor: 'pointer' }} onClick={() => router.push(`/vms/${vm.vmid}`)}>
-                        <td style={{ fontWeight: 600, color: 'var(--text)' }}>{vm.name || `VM ${vm.vmid}`}</td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-4)' }}>{vm.vmid}</td>
-                        <td style={{ color: 'var(--text-3)' }}>{vm.node || '—'}</td>
-                        <td style={{ color: 'var(--text-3)' }}>{vm.pool_id || '—'}</td>
-                        <td><span style={{ fontSize: 11, fontWeight: 700, color: vm.status === 'running' ? 'var(--green)' : 'var(--red)' }}>{vm.status || '—'}</span></td>
-                        <td style={{ color: 'var(--text-3)' }}>{vm.os_type || '—'}</td>
+                        <td><strong>{vm.name || `VM ${vm.vmid}`}</strong></td>
+                        <td><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{vm.vmid}</span></td>
+                        <td>{vm.node || '—'}</td>
+                        <td>{vm.pool_id ? <span className="vmTag">{vm.pool_id}</span> : '—'}</td>
+                        <td><span className={`vm-status ${vm.status === 'running' ? 'running' : 'stopped'}`}>{vm.status || '—'}</span></td>
                       </tr>
                     ))}
-                    {!(data.vms || []).length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 20 }}>Sin VMs</td></tr>}
+                    {!(data.vms||[]).length && <tr><td colSpan={5} className="emptyState">Sin VMs</td></tr>}
                   </tbody>
                 </table>
               </div>

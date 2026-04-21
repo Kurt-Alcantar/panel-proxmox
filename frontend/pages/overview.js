@@ -6,7 +6,6 @@ import { exportToCSV } from '../lib/panel'
 import { usePolling } from '../hooks/usePolling'
 
 function pct(num, total) { return !total ? 0 : Math.round((num / total) * 100) }
-function clamp(num, min, max) { return Math.max(min, Math.min(max, num)) }
 
 function Spark({ values = [], stroke = 'var(--cyan)', fill = 'var(--cyan-dim)' }) {
   const w = 320, h = 88
@@ -26,22 +25,31 @@ function Spark({ values = [], stroke = 'var(--cyan)', fill = 'var(--cyan-dim)' }
 
 function OverviewChart({ primary = [], secondary = [] }) {
   const w = 860, h = 260
-  const max = Math.max(...primary, ...secondary, 100), span = max || 1
+  const allVals = [...primary, ...secondary]
+  const max = allVals.length ? Math.max(...allVals, 1) : 100
+  const span = max || 1
   const make = (series) => series.map((v, i) => {
     const x = (i / Math.max(series.length - 1, 1)) * w
     const y = h - (v / span) * (h - 28) - 16
     return `${x},${y}`
   }).join(' ')
   const p1 = make(primary)
+  const p2 = make(secondary)
   return (
     <svg className="overview-chart-svg" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
       {[0.2, 0.4, 0.6, 0.8].map(mark => {
         const y = h - mark * (h - 28) - 16
         return <line key={mark} x1="0" x2={w} y1={y} y2={y} stroke="rgba(154,163,191,0.12)" strokeDasharray="4 8" />
       })}
-      <polygon points={`0,${h} ${p1} ${w},${h}`} fill="rgba(173,161,255,0.15)" />
-      {secondary.length > 1 && <polyline points={make(secondary)} fill="none" stroke="rgba(250,204,21,0.78)" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />}
-      <polyline points={p1} fill="none" stroke="rgba(196,181,253,0.96)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {primary.length > 1 && (
+        <polygon points={`0,${h} ${p1} ${w},${h}`} fill="rgba(173,161,255,0.15)" />
+      )}
+      {secondary.length > 1 && (
+        <polyline points={p2} fill="none" stroke="rgba(250,204,21,0.78)" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+      {primary.length > 1 && (
+        <polyline points={p1} fill="none" stroke="rgba(196,181,253,0.96)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      )}
     </svg>
   )
 }
@@ -53,7 +61,9 @@ function KpiCard({ label, value, sub, accent = 'var(--cyan)', series = [] }) {
       <div className="overview-kpi-label">{label}</div>
       <div className="overview-kpi-value">{value}</div>
       <div className="overview-kpi-sub">{sub}</div>
-      <div className="overview-kpi-spark-wrap"><Spark values={series} stroke={accent} fill="rgba(255,255,255,0.06)" /></div>
+      <div className="overview-kpi-spark-wrap">
+        <Spark values={series} stroke={accent} fill="rgba(255,255,255,0.06)" />
+      </div>
     </div>
   )
 }
@@ -67,13 +77,9 @@ export default function OverviewPage() {
   const [search, setSearch] = useState('')
   const [metric, setMetric] = useState('cpu')
 
-  // Carga inicial
   useEffect(() => {
     let active = true
-    Promise.allSettled([
-      apiJson('/api/assets'),
-      apiJson('/api/my/vms'),
-    ]).then(([ar, vr]) => {
+    Promise.allSettled([apiJson('/api/assets'), apiJson('/api/my/vms')]).then(([ar, vr]) => {
       if (!active) return
       if (ar.status === 'fulfilled') setAssets(ar.value || [])
       if (vr.status === 'fulfilled') setVms(vr.value || [])
@@ -82,48 +88,45 @@ export default function OverviewPage() {
     return () => { active = false }
   }, [])
 
-  // Polling de métricas reales cada 30s
   const fetchMetrics = useCallback(async (signal) => {
-    const res = await fetch(`/api/overview/metrics?range=24h`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      signal,
+    const token = localStorage.getItem('token')
+    const res = await fetch('/api/overview/metrics?range=24h', {
+      headers: { Authorization: `Bearer ${token}` }, signal,
     })
     if (!res.ok) return null
     return res.json()
   }, [])
-
   usePolling(fetchMetrics, (data) => { if (data) setMetrics(data) }, 30000, true)
 
   const overview = useMemo(() => {
-    const totalAssets    = assets.length
-    const onlineAssets   = assets.filter(a => a.agent_status === 'online').length
-    const offlineAssets  = assets.filter(a => a.agent_status === 'offline').length
-    const errorAssets    = assets.filter(a => a.agent_status === 'error').length
-    const unenrolledAssets = assets.filter(a => a.agent_status === 'unenrolled').length
-    const windows        = assets.filter(a => /windows/i.test(`${a.os_name || a.os_type || ''}`)).length
-    const linux          = assets.filter(a => /linux/i.test(`${a.os_name || a.os_type || ''}`)).length
-    const proxmoxOrigin  = assets.filter(a => !a.is_external).length
-    const externalOrigin = assets.filter(a => a.is_external).length
-    const runningVms     = vms.filter(vm => vm.status === 'running').length
-    const openIncidents  = errorAssets + offlineAssets
-
-    // Series de métricas: usar datos reales si disponibles, sino vacío
-    const cpuSeries   = metrics?.cpu?.series   || []
-    const memSeries   = metrics?.memory?.series || []
-    const netSeries   = metrics?.network?.series || []
-    const diskSeries  = metrics?.disk?.series  || []
-
-    return {
-      totalAssets, onlineAssets, offlineAssets, errorAssets, unenrolledAssets,
+    const totalAssets     = assets.length
+    const onlineAssets    = assets.filter(a => a.agent_status === 'online').length
+    const offlineAssets   = assets.filter(a => a.agent_status === 'offline').length
+    const errorAssets     = assets.filter(a => a.agent_status === 'error').length
+    const unenrolledAssets= assets.filter(a => a.agent_status === 'unenrolled').length
+    const windows         = assets.filter(a => /windows/i.test(`${a.os_name || a.os_type || ''}`)).length
+    const linux           = assets.filter(a => /linux/i.test(`${a.os_name || a.os_type || ''}`)).length
+    const proxmoxOrigin   = assets.filter(a => !a.is_external).length
+    const externalOrigin  = assets.filter(a => a.is_external).length
+    const runningVms      = vms.filter(vm => vm.status === 'running').length
+    const openIncidents   = errorAssets + offlineAssets
+    const cpuSeries       = metrics?.cpu?.series || []
+    const memSeries       = metrics?.memory?.series || []
+    return { totalAssets, onlineAssets, offlineAssets, errorAssets, unenrolledAssets,
       windows, linux, proxmoxOrigin, externalOrigin, runningVms, openIncidents,
-      cpuSeries, memSeries, netSeries, diskSeries,
-      navCounts: { '/assets': totalAssets, '/vms': vms.length },
-    }
+      cpuSeries, memSeries, navCounts: { '/assets': totalAssets, '/vms': vms.length } }
   }, [assets, vms, metrics])
 
-  const trendSeries = { cpu: overview.cpuSeries, memory: overview.memSeries, network: overview.netSeries, disk: overview.diskSeries }
+  const trendSeries = {
+    cpu: metrics?.cpu?.series || [],
+    memory: metrics?.memory?.series || [],
+    network: metrics?.network?.series || [],
+    disk: metrics?.disk?.series || [],
+  }
   const currentSeries = trendSeries[metric] || []
-  const avgVal = currentSeries.length ? (currentSeries.reduce((a, b) => a + b, 0) / currentSeries.length).toFixed(1) : '—'
+  const avgVal = currentSeries.length
+    ? (currentSeries.reduce((a, b) => a + b, 0) / currentSeries.length).toFixed(1) + '%'
+    : '—'
 
   const filteredAssets = useMemo(() => {
     if (!search) return assets
@@ -164,10 +167,10 @@ export default function OverviewPage() {
       ) : (
         <div className="overview-page">
           <div className="overview-kpis-grid">
-            <KpiCard label="Managed assets"   value={overview.totalAssets}   sub={`${overview.onlineAssets} online`}    accent="rgba(168,139,250,0.95)" series={overview.cpuSeries.slice(-8)} />
-            <KpiCard label="Online agents"    value={`${overview.onlineAssets}/${overview.totalAssets}`} sub={`${pct(overview.onlineAssets, overview.totalAssets)}% uptime`} accent="rgba(74,222,128,0.95)" series={overview.memSeries.slice(-8)} />
+            <KpiCard label="Managed assets"    value={overview.totalAssets}   sub={`${overview.onlineAssets} online`}    accent="rgba(168,139,250,0.95)" series={overview.cpuSeries.slice(-8)} />
+            <KpiCard label="Online agents"     value={`${overview.onlineAssets}/${overview.totalAssets}`} sub={`${pct(overview.onlineAssets, overview.totalAssets)}% uptime`} accent="rgba(74,222,128,0.95)" series={overview.memSeries.slice(-8)} />
             <KpiCard label="Incidentes abiertos" value={overview.openIncidents} sub={`${overview.errorAssets} error · ${overview.offlineAssets} offline`} accent="rgba(250,204,21,0.95)" series={[]} />
-            <KpiCard label="VMs activas"      value={`${overview.runningVms}/${vms.length}`} sub="Proxmox running" accent="rgba(248,113,113,0.95)" series={[]} />
+            <KpiCard label="VMs activas"       value={`${overview.runningVms}/${vms.length}`} sub="Proxmox running" accent="rgba(248,113,113,0.95)" series={[]} />
           </div>
 
           <div className="overview-main-grid">
@@ -181,14 +184,15 @@ export default function OverviewPage() {
                 </div>
               </div>
               <div className="overview-chart-stats">
-                <div><span>AVG</span><strong>{avgVal}{avgVal !== '—' ? '%' : ''}</strong></div>
+                <div><span>AVG</span><strong>{avgVal}</strong></div>
               </div>
               <div className="overview-chart-wrap">
-                <OverviewChart primary={currentSeries} secondary={[]} />
-                {currentSeries.length === 0 && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-4)', fontSize: 13 }}>
-                    Sin datos de métricas aún
+                {currentSeries.length === 0 ? (
+                  <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-4)', fontSize: 13, fontFamily: 'var(--font-mono)' }}>
+                    Sin datos de métricas — conectando a Elasticsearch...
                   </div>
+                ) : (
+                  <OverviewChart primary={currentSeries} secondary={[]} />
                 )}
               </div>
             </section>
@@ -207,7 +211,7 @@ export default function OverviewPage() {
                 ].map(([label, value, color]) => (
                   <div key={label} className="status-bar-row">
                     <div className="status-bar-head"><span>{label}</span><span>{value}</span></div>
-                    <div className="status-bar-track"><div className="status-bar-fill" style={{ width: `${pct(value, overview.totalAssets)}%`, background: color }} /></div>
+                    <div className="status-bar-track"><div className="status-bar-fill" style={{ width: `${pct(value, overview.totalAssets || 1)}%`, background: color }} /></div>
                   </div>
                 ))}
               </div>

@@ -1,401 +1,1423 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 import AppShell from '../components/AppShell'
-import { apiJson } from '../lib/auth'
 
-// ─── Wizard ──────────────────────────────────────────────────────
-
-function Wizard({ steps, onClose, onFinish, title }) {
-  const [step, setStep] = useState(0)
-  const [data, setData] = useState({})
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const current = steps[step]
-  const isLast = step === steps.length - 1
-
-  const next = async (stepData) => {
-    setErr('')
-    const merged = { ...data, ...stepData }
-    setData(merged)
-    if (isLast) {
-      setBusy(true)
-      try { await onFinish(merged); onClose() }
-      catch (e) { setErr(e.message || 'Error al guardar') }
-      finally { setBusy(false) }
-    } else {
-      setStep(s => s + 1)
-    }
-  }
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div className="card" style={{ width: '100%', maxWidth: 520 }}>
-        <div className="card-head">
-          <div>
-            <h3 style={{ fontSize: 15 }}>{title}</h3>
-            <div className="ch-meta">Paso {step + 1} de {steps.length} · {current.label}</div>
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
-        </div>
-        <div style={{ display: 'flex', gap: 4, padding: '10px 18px 0' }}>
-          {steps.map((s, i) => (
-            <div key={i} style={{ flex: 1, height: 2, borderRadius: 2, background: i <= step ? 'var(--cyan)' : 'var(--border)', transition: 'background 0.2s' }} />
-          ))}
-        </div>
-        <div className="cardPad">
-          {err && <div className="errorBox" style={{ marginBottom: 14 }}>{err}</div>}
-          <current.Component data={data} onNext={next} onBack={step > 0 ? () => { setErr(''); setStep(s => s - 1) } : null} busy={busy} isLast={isLast} />
-        </div>
-      </div>
-    </div>
-  )
+const theme = {
+  pageText: '#f3edff',
+  muted: '#b8abd9',
+  card: '#171129',
+  card2: '#21183a',
+  card3: '#2a1f49',
+  border: '#3b2d63',
+  borderSoft: '#4c3b7f',
+  inputBg: '#120d22',
+  inputText: '#f3edff',
+  primary: '#8b5cf6',
+  primaryHover: '#a78bfa',
+  successBg: 'rgba(34,197,94,0.12)',
+  successBorder: 'rgba(34,197,94,0.35)',
+  successText: '#86efac',
+  errorBg: 'rgba(239,68,68,0.12)',
+  errorBorder: 'rgba(239,68,68,0.35)',
+  errorText: '#fca5a5',
+  warningBg: 'rgba(245,158,11,0.12)',
+  warningBorder: 'rgba(245,158,11,0.35)',
+  warningText: '#fcd34d',
+  shadow: '0 14px 34px rgba(0,0,0,0.35)',
 }
 
-// ─── Pasos wizard Tenant ─────────────────────────────────────────
-
-function TenantStep1({ data, onNext }) {
-  const [form, setForm] = useState({ code: data.code || '', name: data.name || '', type: data.type || 'client' })
-  const s = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
-  return (
-    <div className="adminFormGrid">
-      <label className="authField" style={{ gridColumn: '1 / -1' }}>
-        <span>Tipo *</span>
-        <select className="authInput" value={form.type} onChange={s('type')}>
-          <option value="partner">Partner — ve activos de sus clientes</option>
-          <option value="client">Cliente final — ve solo sus activos</option>
-        </select>
-      </label>
-      <label className="authField"><span>Código *</span><input className="authInput" value={form.code} onChange={s('code')} placeholder="CONESTRA" /></label>
-      <label className="authField"><span>Nombre *</span><input className="authInput" value={form.name} onChange={s('name')} placeholder="Conestra S.A." /></label>
-      <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn btn-primary" onClick={() => { if (form.code && form.name) onNext(form) }}>Siguiente →</button>
-      </div>
-    </div>
-  )
+const cardStyle = {
+  background: theme.card,
+  borderRadius: 16,
+  padding: 18,
+  border: `1px solid ${theme.border}`,
+  boxShadow: theme.shadow,
 }
 
-function TenantStep2({ data, onNext, onBack, tenants }) {
-  const [parentId, setParentId] = useState(data.parent_tenant_id || '')
-  const partners = (tenants || []).filter(t => t.type === 'partner' || t.type === 'platform')
-  return (
-    <div className="adminFormGrid" style={{ gridTemplateColumns: '1fr' }}>
-      {data.type === 'client' && (
-        <label className="authField">
-          <span>Partner padre *</span>
-          <select className="authInput" value={parentId} onChange={e => setParentId(e.target.value)}>
-            <option value="">Selecciona un partner</option>
-            {partners.map(t => <option key={t.id} value={t.id}>{t.name} ({t.type})</option>)}
-          </select>
-        </label>
-      )}
-      <div className="card cardPad" style={{ background: 'var(--surface-2)' }}>
-        <div className="statLabel">Resumen</div>
-        {[['Tipo', data.type], ['Código', data.code], ['Nombre', data.name], ...(data.type === 'client' && parentId ? [['Partner', partners.find(t => t.id === parentId)?.name || '—']] : [])].map(([k, v]) => (
-          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 6 }}>
-            <span style={{ color: 'var(--text-3)' }}>{k}</span><strong>{v}</strong>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <button className="btn btn-ghost" onClick={onBack}>← Atrás</button>
-        <button className="btn btn-primary" onClick={() => { if (data.type !== 'client' || parentId) onNext({ parent_tenant_id: parentId || null }) }}>Crear tenant ✓</button>
-      </div>
-    </div>
-  )
+const inputStyle = {
+  width: '100%',
+  border: `1px solid ${theme.borderSoft}`,
+  borderRadius: 10,
+  padding: '10px 12px',
+  fontSize: 14,
+  background: theme.inputBg,
+  color: theme.inputText,
+  outline: 'none',
 }
 
-// ─── Pasos wizard Usuario ────────────────────────────────────────
-
-function UserStep1({ data, onNext }) {
-  const [form, setForm] = useState({ username: data.username || '', email: data.email || '', firstName: data.firstName || '', lastName: data.lastName || '', password: data.password || '' })
-  const s = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
-  const valid = form.username && form.email && form.password.length >= 8
-  return (
-    <div className="adminFormGrid">
-      <label className="authField"><span>Nombre</span><input className="authInput" value={form.firstName} onChange={s('firstName')} placeholder="Kurt" /></label>
-      <label className="authField"><span>Apellidos</span><input className="authInput" value={form.lastName} onChange={s('lastName')} placeholder="Alcantar" /></label>
-      <label className="authField"><span>Username *</span><input className="authInput" value={form.username} onChange={s('username')} placeholder="k.alcantar" /></label>
-      <label className="authField"><span>Email *</span><input className="authInput" type="email" value={form.email} onChange={s('email')} placeholder="k@empresa.com" /></label>
-      <label className="authField" style={{ gridColumn: '1 / -1' }}><span>Contraseña inicial * (mín. 8)</span><input className="authInput" type="password" value={form.password} onChange={s('password')} /></label>
-      <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn btn-primary" disabled={!valid} onClick={() => { if (valid) onNext(form) }}>Siguiente →</button>
-      </div>
-    </div>
-  )
+const textareaStyle = {
+  ...inputStyle,
+  minHeight: 88,
+  resize: 'vertical',
 }
 
-function UserStep2({ data, onNext, onBack, tenants, roles }) {
-  const [tenantId, setTenantId] = useState(data.tenant_id || '')
-  const [roleIds, setRoleIds] = useState(data.role_ids || [])
-  const toggleRole = id => setRoleIds(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id])
+const labelStyle = {
+  display: 'grid',
+  gap: 6,
+  fontSize: 13,
+  color: theme.muted,
+}
+
+const buttonStyle = {
+  border: 'none',
+  borderRadius: 10,
+  padding: '10px 14px',
+  background: theme.primary,
+  color: '#fff',
+  cursor: 'pointer',
+  fontWeight: 700,
+}
+
+const altButtonStyle = {
+  ...buttonStyle,
+  background: '#6d28d9',
+}
+
+const ghostButtonStyle = {
+  ...buttonStyle,
+  background: theme.card3,
+  color: theme.pageText,
+  border: `1px solid ${theme.borderSoft}`,
+}
+
+const dangerButtonStyle = {
+  ...buttonStyle,
+  background: '#b91c1c',
+}
+
+const successBoxStyle = {
+  background: theme.successBg,
+  color: theme.successText,
+  border: `1px solid ${theme.successBorder}`,
+  padding: 14,
+  borderRadius: 12,
+}
+
+const errorBoxStyle = {
+  background: theme.errorBg,
+  color: theme.errorText,
+  border: `1px solid ${theme.errorBorder}`,
+  padding: 14,
+  borderRadius: 12,
+}
+
+const chipStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 12px',
+  border: `1px solid ${theme.borderSoft}`,
+  borderRadius: 999,
+  color: theme.pageText,
+  background: theme.card2,
+}
+
+const tableHeadCellStyle = {
+  textAlign: 'left',
+  padding: '10px 8px',
+  color: theme.muted,
+  fontSize: 12,
+  borderBottom: `1px solid ${theme.border}`,
+}
+
+const tableCellStyle = {
+  padding: '10px 8px',
+  color: theme.pageText,
+  borderTop: `1px solid ${theme.border}`,
+  verticalAlign: 'top',
+}
+
+function SectionTitle({ title, subtitle, actions }) {
   return (
-    <div className="adminFormGrid" style={{ gridTemplateColumns: '1fr' }}>
-      <label className="authField">
-        <span>Tenant *</span>
-        <select className="authInput" value={tenantId} onChange={e => setTenantId(e.target.value)}>
-          <option value="">Selecciona un tenant</option>
-          {(tenants || []).map(t => <option key={t.id} value={t.id}>{t.name} ({t.type || 'client'})</option>)}
-        </select>
-      </label>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: 16,
+        alignItems: 'flex-start',
+        marginBottom: 14,
+        flexWrap: 'wrap',
+      }}
+    >
       <div>
-        <div className="statLabel">Roles *</div>
-        <div className="poolFilterRow">
-          {(roles || []).map(role => (
-            <button key={role.id} className={`chip${roleIds.includes(role.id) ? ' active' : ''}`} onClick={() => toggleRole(role.id)}>{role.code}</button>
-          ))}
-        </div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: theme.pageText }}>{title}</div>
+        {subtitle ? (
+          <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{subtitle}</div>
+        ) : null}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <button className="btn btn-ghost" onClick={onBack}>← Atrás</button>
-        <button className="btn btn-primary" disabled={!tenantId || !roleIds.length} onClick={() => { if (tenantId && roleIds.length) onNext({ tenant_id: tenantId, role_ids: roleIds }) }}>Siguiente →</button>
-      </div>
+      {actions ? <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{actions}</div> : null}
     </div>
   )
 }
 
-function UserStep3({ data, onNext, onBack, tenants, roles, busy }) {
-  const tenant = (tenants || []).find(t => t.id === data.tenant_id)
-  const userRoles = (roles || []).filter(r => (data.role_ids || []).includes(r.id))
+function Field({ label, children }) {
   return (
-    <div className="adminFormGrid" style={{ gridTemplateColumns: '1fr' }}>
-      <div className="card cardPad" style={{ background: 'var(--surface-2)' }}>
-        <div className="statLabel">Confirmación</div>
-        {[['Nombre', [data.firstName, data.lastName].filter(Boolean).join(' ') || '—'], ['Username', data.username], ['Email', data.email], ['Tenant', tenant ? `${tenant.name} (${tenant.type})` : '—'], ['Roles', userRoles.map(r => r.code).join(', ') || '—']].map(([k, v]) => (
-          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 8 }}>
-            <span style={{ color: 'var(--text-3)' }}>{k}</span><strong>{v}</strong>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <button className="btn btn-ghost" onClick={onBack} disabled={busy}>← Atrás</button>
-        <button className="btn btn-primary" onClick={() => onNext({})} disabled={busy}>{busy ? 'Creando...' : 'Crear usuario ✓'}</button>
-      </div>
-    </div>
+    <label style={labelStyle}>
+      <span>{label}</span>
+      {children}
+    </label>
   )
 }
 
-// ─── Página principal ─────────────────────────────────────────────
+const emptyBootstrap = {
+  tenants: [],
+  tenantGroups: [],
+  pools: [],
+  roles: [],
+  users: [],
+  vms: [],
+}
+
+const emptyTenantForm = {
+  id: '',
+  code: '',
+  name: '',
+  status: 'ACTIVE',
+  type: 'client',
+  parent_tenant_id: '',
+}
+
+const emptyTenantGroupForm = {
+  id: '',
+  tenant_id: '',
+  code: '',
+  name: '',
+}
+
+const emptyUserForm = {
+  id: '',
+  username: '',
+  email: '',
+  firstName: '',
+  lastName: '',
+  password: '',
+  tenant_id: '',
+  tenant_group_id: '',
+  role_ids: [],
+  enabled: true,
+}
+
+const emptyVmForm = {
+  vmid: '',
+  name: '',
+  node: '',
+  pool_id: '',
+  tenant_id: '',
+  tenant_group_id: '',
+  status: '',
+  os_type: '',
+  elastic_host_name: '',
+  kibana_base_url: '',
+  monitored_services: '',
+  observability_enabled: false,
+}
 
 export default function AdminPage() {
   const router = useRouter()
-  const [data, setData] = useState({ tenants: [], roles: [], users: [], vms: [], assets: [] })
+
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState({ type: '', text: '' })
-  const [wizard, setWizard] = useState(null)
-  const [activeTab, setActiveTab] = useState('tenants')
+  const [data, setData] = useState(emptyBootstrap)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
-  const flash = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 4000) }
+  const [poolGroupId, setPoolGroupId] = useState('')
+  const [selectedPoolIds, setSelectedPoolIds] = useState([])
 
-  const load = async () => {
+  const [tenantForm, setTenantForm] = useState(emptyTenantForm)
+  const [tenantGroupForm, setTenantGroupForm] = useState(emptyTenantGroupForm)
+  const [userForm, setUserForm] = useState(emptyUserForm)
+
+  const [assets, setAssets] = useState([])
+  const [vmSearch, setVmSearch] = useState('')
+  const [selectedVmId, setSelectedVmId] = useState('')
+  const [vmForm, setVmForm] = useState(emptyVmForm)
+
+  const clearMessages = () => {
+    setError('')
+    setSuccess('')
+  }
+
+  const redirectToLogin = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token')
+      localStorage.removeItem('refresh_token')
+    }
+    router.replace('/login')
+  }
+
+  const fetchWithRefresh = async (url, options = {}) => {
+    if (typeof window === 'undefined') {
+      throw new Error('Esta acción solo está disponible en el navegador')
+    }
+
+    const accessToken = localStorage.getItem('token')
+    const refreshToken = localStorage.getItem('refresh_token')
+
+    if (!accessToken && !refreshToken) {
+      redirectToLogin()
+      throw new Error('Sesión no disponible')
+    }
+
+    const attempt = async (currentToken) =>
+      fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+          ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
+        },
+      })
+
+    let response = await attempt(accessToken)
+
+    if (response.status !== 401) return response
+
+    if (!refreshToken) {
+      redirectToLogin()
+      throw new Error('Sesión expirada')
+    }
+
+    const refreshResponse = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+
+    const refreshText = await refreshResponse.text()
+    let refreshData = {}
+    try {
+      refreshData = refreshText ? JSON.parse(refreshText) : {}
+    } catch {
+      refreshData = {}
+    }
+
+    if (!refreshResponse.ok || !refreshData.access_token) {
+      redirectToLogin()
+      throw new Error('No se pudo refrescar la sesión')
+    }
+
+    localStorage.setItem('token', refreshData.access_token)
+    localStorage.setItem('refresh_token', refreshData.refresh_token || refreshToken)
+
+    response = await attempt(refreshData.access_token)
+    return response
+  }
+
+  const request = async (url, options = {}) => {
+    const response = await fetchWithRefresh(url, options)
+    const text = await response.text()
+
+    let payload = null
+    try {
+      payload = text ? JSON.parse(text) : null
+    } catch {
+      payload = text
+    }
+
+    if (!response.ok) {
+      throw new Error(payload?.message || payload?.error || payload || `HTTP ${response.status}`)
+    }
+
+    return payload
+  }
+
+  const refreshData = async () => {
+    clearMessages()
     setLoading(true)
+
     try {
-      const [bootstrap, assets] = await Promise.all([
-        apiJson('/api/admin/bootstrap'),
-        apiJson('/api/admin/assets').catch(() => []),
+      const [bootstrap, assetList] = await Promise.all([
+        request('/api/admin/bootstrap'),
+        request('/api/admin/assets').catch(() => []),
       ])
-      setData({ tenants: bootstrap?.tenants || [], roles: bootstrap?.roles || [], users: bootstrap?.users || [], vms: bootstrap?.vms || [], assets: Array.isArray(assets) ? assets : [] })
-    } catch (err) { flash('err', err.message || 'Error cargando datos') }
-    finally { setLoading(false) }
+      setData(bootstrap || emptyBootstrap)
+      setAssets(Array.isArray(assetList) ? assetList : [])
+
+      const nextTenantGroups = bootstrap?.tenantGroups || []
+      const nextVms = bootstrap?.vms || []
+
+      setTenantGroupForm((current) => ({
+        ...current,
+        tenant_id: current.tenant_id || bootstrap?.tenants?.[0]?.id || '',
+      }))
+
+      setUserForm((current) => ({
+        ...current,
+        tenant_group_id: current.tenant_group_id || nextTenantGroups[0]?.id || '',
+      }))
+
+      const resolvedPoolGroupId =
+        poolGroupId && nextTenantGroups.some((g) => g.id === poolGroupId)
+          ? poolGroupId
+          : nextTenantGroups[0]?.id || ''
+
+      setPoolGroupId(resolvedPoolGroupId)
+
+      const currentGroup = nextTenantGroups.find((g) => g.id === resolvedPoolGroupId)
+      setSelectedPoolIds((currentGroup?.pools || []).map((pool) => pool.id))
+
+      const resolvedVmId =
+        selectedVmId && nextVms.some((vm) => String(vm.vmid) === String(selectedVmId))
+          ? selectedVmId
+          : nextVms[0]?.vmid
+          ? String(nextVms[0].vmid)
+          : ''
+
+      setSelectedVmId(resolvedVmId)
+    } catch (err) {
+      setError(err.message || 'No se pudo cargar el módulo administrativo')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
 
-  const handleCreateTenant = async (fd) => {
-    await apiJson('/api/admin/tenants', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: fd.code, name: fd.name, type: fd.type, parent_tenant_id: fd.parent_tenant_id || null, status: 'ACTIVE' }) })
-    await load(); flash('ok', `Tenant "${fd.name}" creado.`)
+    const token = localStorage.getItem('token')
+    const refreshToken = localStorage.getItem('refresh_token')
+
+    if (!token && !refreshToken) {
+      router.replace('/login')
+      return
+    }
+
+    refreshData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const group = data.tenantGroups.find((item) => item.id === poolGroupId)
+    setSelectedPoolIds((group?.pools || []).map((pool) => pool.id))
+  }, [poolGroupId, data.tenantGroups])
+
+  useEffect(() => {
+    const vm = data.vms.find((item) => String(item.vmid) === String(selectedVmId))
+    if (!vm) return
+
+    setVmForm({
+      vmid: String(vm.vmid),
+      name: vm.name || '',
+      node: vm.node || '',
+      pool_id: vm.pool_id || '',
+      tenant_id: vm.tenant_id || '',
+      tenant_group_id: vm.tenant_group_id || '',
+      status: vm.status || '',
+      os_type: vm.os_type || '',
+      elastic_host_name: vm.elastic_host_name || '',
+      kibana_base_url: vm.kibana_base_url || '',
+      monitored_services: vm.monitored_services || '',
+      observability_enabled: !!vm.observability_enabled,
+    })
+  }, [selectedVmId, data.vms])
+
+  const tenantOptions = data.tenants || []
+  const tenantGroupOptions = data.tenantGroups || []
+  const poolOptions = data.pools || []
+  const roleOptions = data.roles || []
+
+  const filteredVms = useMemo(() => {
+    const term = vmSearch.trim().toLowerCase()
+    if (!term) return data.vms || []
+
+    return (data.vms || []).filter((vm) =>
+      [vm.name, vm.node, vm.pool_id, vm.status, String(vm.vmid)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    )
+  }, [vmSearch, data.vms])
+
+  const toggleRole = (roleId) => {
+    setUserForm((current) => ({
+      ...current,
+      role_ids: current.role_ids.includes(roleId)
+        ? current.role_ids.filter((value) => value !== roleId)
+        : [...current.role_ids, roleId],
+    }))
   }
-  const handleCreateUser = async (fd) => {
-    await apiJson('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: fd.username, email: fd.email, firstName: fd.firstName, lastName: fd.lastName, password: fd.password, tenant_id: fd.tenant_id, role_ids: fd.role_ids }) })
-    await load(); flash('ok', `Usuario "${fd.email}" creado.`)
+
+  const togglePool = (poolId) => {
+    setSelectedPoolIds((current) =>
+      current.includes(poolId) ? current.filter((value) => value !== poolId) : [...current, poolId]
+    )
   }
-  const deleteTenant = async (t) => {
-    if (!window.confirm(`¿Eliminar tenant "${t.name}"?`)) return
+
+  const runAction = async (action, onSuccessMessage) => {
+    clearMessages()
     setBusy(true)
-    try { await apiJson(`/api/admin/tenants/${t.id}`, { method: 'DELETE' }); await load(); flash('ok', 'Tenant eliminado.') }
-    catch (err) { flash('err', err.message) } finally { setBusy(false) }
-  }
-  const deleteUser = async (u) => {
-    if (!window.confirm(`¿Eliminar usuario "${u.email}"? Se borrará de Keycloak.`)) return
-    setBusy(true)
-    try { await apiJson(`/api/admin/users/${u.id}`, { method: 'DELETE' }); await load(); flash('ok', 'Usuario eliminado.') }
-    catch (err) { flash('err', err.message) } finally { setBusy(false) }
-  }
-  const assignAsset = async (assetId, tenantId) => {
+
     try {
-      if (tenantId) await apiJson(`/api/admin/assets/${assetId}/assign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId }) })
-      else await apiJson(`/api/admin/assets/${assetId}/assign`, { method: 'DELETE' })
-      const updated = await apiJson('/api/admin/assets').catch(() => [])
-      setData(prev => ({ ...prev, assets: Array.isArray(updated) ? updated : prev.assets }))
-    } catch (err) { flash('err', err.message) }
-  }
-  const syncAll = async () => {
-    setBusy(true)
-    try { await apiJson('/api/admin/sync-all', { method: 'POST' }); await load(); flash('ok', 'Sincronización completada.') }
-    catch (err) { flash('err', err.message) } finally { setBusy(false) }
+      await action()
+      await refreshData()
+      if (onSuccessMessage) setSuccess(onSuccessMessage)
+    } catch (err) {
+      setError(err.message || 'Error inesperado')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const typeBadge = (type) => {
-    const cfg = { platform: 'running', partner: 'paused', client: 'unknown' }
-    return <span className={`vm-status ${cfg[type] || 'unknown'}`}>{type}</span>
+  const submitTenant = (e) => {
+    e.preventDefault()
+
+    const payload = {
+      code: tenantForm.code,
+      name: tenantForm.name,
+      status: tenantForm.status,
+      type: tenantForm.type,
+      parent_tenant_id: tenantForm.parent_tenant_id || null,
+    }
+
+    const path = tenantForm.id ? `/api/admin/tenants/${tenantForm.id}` : '/api/admin/tenants'
+    const method = tenantForm.id ? 'PATCH' : 'POST'
+
+    runAction(async () => {
+      await request(path, { method, body: JSON.stringify(payload) })
+      setTenantForm(emptyTenantForm)
+    }, tenantForm.id ? 'Tenant actualizado' : 'Tenant creado')
   }
 
-  const clientTenants = useMemo(() => data.tenants.filter(t => t.type === 'client'), [data.tenants])
+  const deleteTenant = (tenant) => {
+    if (!window.confirm(`Se eliminará el tenant ${tenant.name}. ¿Continúo?`)) return
 
-  const tabs = [['tenants','Tenants',data.tenants.length],['users','Usuarios',data.users.length],['assets','Activos',data.assets.length],['vms','VMs',(data.vms||[]).length]]
+    runAction(async () => {
+      await request(`/api/admin/tenants/${tenant.id}`, { method: 'DELETE' })
+      if (tenantForm.id === tenant.id) setTenantForm(emptyTenantForm)
+    }, 'Tenant eliminado')
+  }
+
+  const submitTenantGroup = (e) => {
+    e.preventDefault()
+
+    const payload = {
+      tenant_id: tenantGroupForm.tenant_id,
+      code: tenantGroupForm.code,
+      name: tenantGroupForm.name,
+    }
+
+    const path = tenantGroupForm.id
+      ? `/api/admin/tenant-groups/${tenantGroupForm.id}`
+      : '/api/admin/tenant-groups'
+    const method = tenantGroupForm.id ? 'PATCH' : 'POST'
+
+    runAction(async () => {
+      await request(path, { method, body: JSON.stringify(payload) })
+      setTenantGroupForm(emptyTenantGroupForm)
+    }, tenantGroupForm.id ? 'Tenant group actualizado' : 'Tenant group creado')
+  }
+
+  const deleteTenantGroup = (group) => {
+    if (!window.confirm(`Se eliminará el tenant group ${group.name}. ¿Continúo?`)) return
+
+    runAction(async () => {
+      await request(`/api/admin/tenant-groups/${group.id}`, { method: 'DELETE' })
+      if (tenantGroupForm.id === group.id) setTenantGroupForm(emptyTenantGroupForm)
+    }, 'Tenant group eliminado')
+  }
+
+  const submitUser = (e) => {
+    e.preventDefault()
+
+    const payload = {
+      username: userForm.username,
+      email: userForm.email,
+      firstName: userForm.firstName,
+      lastName: userForm.lastName,
+      password: userForm.password,
+      tenant_id: userForm.tenant_id || null,
+      tenant_group_id: userForm.tenant_group_id || null,
+      role_ids: userForm.role_ids,
+      enabled: userForm.enabled,
+    }
+
+    const path = userForm.id ? `/api/admin/users/${userForm.id}` : '/api/admin/users'
+    const method = userForm.id ? 'PATCH' : 'POST'
+
+    runAction(async () => {
+      await request(path, { method, body: JSON.stringify(payload) })
+      setUserForm({
+        ...emptyUserForm,
+        tenant_group_id: tenantGroupOptions[0]?.id || '',
+      })
+    }, userForm.id ? 'Usuario actualizado' : 'Usuario creado')
+  }
+
+  const startEditUser = (user) => {
+    setUserForm({
+      id: user.id,
+      username: user.username || '',
+      email: user.email || '',
+      firstName: user.first_name || '',
+      lastName: user.last_name || '',
+      password: '',
+      tenant_id: user.tenant_id || user.tenant?.id || '',
+      tenant_group_id: user.tenant_group?.id || '',
+      role_ids: (user.roles || []).map((role) => role.id),
+      enabled: user.enabled !== false,
+    })
+
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  const toggleUserEnabled = (user, enabled) => {
+    runAction(
+      () =>
+        request(`/api/admin/users/${user.id}/${enabled ? 'enable' : 'disable'}`, {
+          method: 'POST',
+        }),
+      enabled ? 'Usuario habilitado' : 'Usuario deshabilitado'
+    )
+  }
+
+  const deleteUser = (user) => {
+    if (!window.confirm(`Se eliminará el usuario ${user.email}. También se borrará de Keycloak. ¿Continúo?`)) return
+
+    runAction(async () => {
+      await request(`/api/admin/users/${user.id}`, { method: 'DELETE' })
+      if (userForm.id === user.id) {
+        setUserForm({
+          ...emptyUserForm,
+          tenant_group_id: tenantGroupOptions[0]?.id || '',
+        })
+      }
+    }, 'Usuario eliminado')
+  }
+
+  const savePoolBindings = () => {
+    if (!poolGroupId) return
+
+    runAction(
+      () =>
+        request(`/api/admin/tenant-groups/${poolGroupId}/pools`, {
+          method: 'PUT',
+          body: JSON.stringify({ pool_ids: selectedPoolIds }),
+        }),
+      'Asignación de pools guardada'
+    )
+  }
+
+  const saveVm = (e) => {
+    e.preventDefault()
+    if (!vmForm.vmid) return
+
+    runAction(
+      () =>
+        request(`/api/admin/vms/${vmForm.vmid}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            ...vmForm,
+            tenant_id: vmForm.tenant_id || null,
+            tenant_group_id: vmForm.tenant_group_id || null,
+          }),
+        }),
+      'VM actualizada'
+    )
+  }
+
+  const deleteVm = () => {
+    if (!vmForm.vmid) return
+    if (!window.confirm(`Se borrará la VM ${vmForm.vmid} del inventario local. ¿Continúo?`)) return
+
+    runAction(async () => {
+      await request(`/api/admin/vms/${vmForm.vmid}`, { method: 'DELETE' })
+      setSelectedVmId('')
+      setVmForm(emptyVmForm)
+    }, 'VM eliminada del inventario local')
+  }
+
+  const syncAll = () => {
+    runAction(() => request('/api/admin/sync-all', { method: 'POST' }), 'Sincronización completada')
+  }
+
+  const TABS = [
+    { key: 'tenants',  label: 'Tenants & Grupos' },
+    { key: 'users',    label: 'Usuarios' },
+    { key: 'assets',   label: 'Activos' },
+    { key: 'vms',      label: 'Inventario VM' },
+  ]
+  const [activeTab, setActiveTab] = React.useState('tenants')
 
   return (
     <AppShell
       title="Tenants & access"
-      subtitle="Gestión de tenants, usuarios y asignación de activos"
+      subtitle="Gestión de tenants, usuarios y asignación de activos."
       actions={
-        <div className="overview-toolbar">
-          <button className="btn btn-secondary" onClick={syncAll} disabled={busy || loading}>{busy ? 'Procesando...' : 'Sync Proxmox'}</button>
-          <button className="btn btn-secondary" onClick={load} disabled={loading}>Recargar</button>
-          <button className="btn btn-secondary" onClick={() => setWizard('tenant')}>+ Tenant</button>
-          <button className="btn btn-primary" onClick={() => setWizard('user')}>+ Usuario</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={altButtonStyle} onClick={syncAll} disabled={busy || loading}>
+            {busy ? 'Procesando...' : 'Sync Proxmox'}
+          </button>
+          <button style={ghostButtonStyle} onClick={refreshData} disabled={busy || loading}>
+            Recargar
+          </button>
         </div>
       }
     >
-      {wizard === 'tenant' && (
-        <Wizard title="Nuevo tenant" onClose={() => setWizard(null)} onFinish={handleCreateTenant}
-          steps={[
-            { label: 'Tipo y datos', Component: p => <TenantStep1 {...p} /> },
-            { label: 'Confirmación', Component: p => <TenantStep2 {...p} tenants={data.tenants} /> },
-          ]} />
-      )}
-      {wizard === 'user' && (
-        <Wizard title="Nuevo usuario" onClose={() => setWizard(null)} onFinish={handleCreateUser}
-          steps={[
-            { label: 'Datos de cuenta', Component: p => <UserStep1 {...p} /> },
-            { label: 'Tenant y roles',  Component: p => <UserStep2 {...p} tenants={data.tenants} roles={data.roles} /> },
-            { label: 'Confirmación',    Component: p => <UserStep3 {...p} tenants={data.tenants} roles={data.roles} /> },
-          ]} />
-      )}
+      <div style={{ display: 'grid', gap: 18 }}>
+        {error ? <div style={errorBoxStyle}>{error}</div> : null}
+        {success ? <div style={successBoxStyle}>{success}</div> : null}
 
-      {msg.text && <div className={msg.type === 'ok' ? 'card cardPad' : 'errorBox'} style={{ marginBottom: 14, ...(msg.type === 'ok' ? { color: 'var(--green)', borderColor: 'var(--green)', background: 'var(--green-dim)' } : {}) }}>{msg.text}</div>}
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4, background: theme.card2, borderRadius: 12, padding: 4, width: 'fit-content' }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+              padding: '6px 16px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+              borderRadius: 9,
+              background: activeTab === t.key ? theme.card3 : 'transparent',
+              color: activeTab === t.key ? theme.pageText : theme.muted,
+              outline: activeTab === t.key ? `1px solid ${theme.borderSoft}` : 'none',
+            }}>{t.label}</button>
+          ))}
+        </div>
 
-      <div className="poolFilterRow" style={{ marginBottom: 18 }}>
-        {tabs.map(([key, label, count]) => (
-          <button key={key} className={`chip${activeTab === key ? ' active' : ''}`} onClick={() => setActiveTab(key)}>
-            {label} <span className="chip-count">{count}</span>
-          </button>
-        ))}
-      </div>
+        {activeTab === 'tenants' && <div style={{ display: 'grid', gap: 18 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: 18,
+          }}
+        >
+          <form onSubmit={submitTenant} style={cardStyle}>
+            <SectionTitle
+              title={tenantForm.id ? 'Editar tenant' : 'Nuevo tenant'}
+              subtitle="Catálogo principal para segmentar clientes o áreas."
+            />
+            <div style={{ display: 'grid', gap: 12 }}>
+              <Field label="Code">
+                <input
+                  style={inputStyle}
+                  value={tenantForm.code}
+                  onChange={(e) => setTenantForm({ ...tenantForm, code: e.target.value })}
+                />
+              </Field>
 
-      {loading ? <div className="card cardPad"><p className="muted">Cargando...</p></div> : (
-        <>
-          {activeTab === 'tenants' && (
-            <div className="card">
-              <div className="overview-card-head compact"><h3>Jerarquía de tenants</h3><span className="ch-meta">{data.tenants.length} tenants</span></div>
-              <div className="table-wrapp">
-                <table className="table">
-                  <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Parent</th><th>Estado</th><th>Acciones</th></tr></thead>
-                  <tbody>
-                    {data.tenants.map(t => {
-                      const parent = data.tenants.find(p => p.id === t.parent_tenant_id)
-                      return (
-                        <tr key={t.id}>
-                          <td><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{t.code}</span></td>
-                          <td><strong>{t.name}</strong></td>
-                          <td>{typeBadge(t.type)}</td>
-                          <td>{parent?.name || '—'}</td>
-                          <td><span style={{ fontSize: 11, color: t.status === 'ACTIVE' ? 'var(--green)' : 'var(--red)' }}>{t.status}</span></td>
-                          <td>{t.type !== 'platform' && <button className="btn btn-danger btn-sm" onClick={() => deleteTenant(t)} disabled={busy}>Eliminar</button>}</td>
-                        </tr>
-                      )
-                    })}
-                    {!data.tenants.length && <tr><td colSpan={6} className="emptyState">Sin tenants</td></tr>}
-                  </tbody>
-                </table>
+              <Field label="Nombre">
+                <input
+                  style={inputStyle}
+                  value={tenantForm.name}
+                  onChange={(e) => setTenantForm({ ...tenantForm, name: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Status">
+                <select
+                  style={inputStyle}
+                  value={tenantForm.status}
+                  onChange={(e) => setTenantForm({ ...tenantForm, status: e.target.value })}
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </Field>
+
+              <Field label="Tipo">
+                <select
+                  style={inputStyle}
+                  value={tenantForm.type}
+                  onChange={(e) => setTenantForm({ ...tenantForm, type: e.target.value, parent_tenant_id: '' })}
+                >
+                  <option value="partner">Partner (ej. Conestra)</option>
+                  <option value="client">Cliente final (ej. G-One)</option>
+                </select>
+              </Field>
+
+              {tenantForm.type === 'client' && (
+                <Field label="Partner padre">
+                  <select
+                    style={inputStyle}
+                    value={tenantForm.parent_tenant_id}
+                    onChange={(e) => setTenantForm({ ...tenantForm, parent_tenant_id: e.target.value })}
+                  >
+                    <option value="">Selecciona el partner</option>
+                    {tenantOptions.filter(t => t.type === 'partner' || t.type === 'platform').map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button style={buttonStyle} disabled={busy || loading}>
+                  {tenantForm.id ? 'Guardar cambios' : 'Crear tenant'}
+                </button>
+                {tenantForm.id ? (
+                  <button type="button" style={ghostButtonStyle} onClick={() => setTenantForm(emptyTenantForm)}>
+                    Cancelar
+                  </button>
+                ) : null}
               </div>
             </div>
-          )}
+          </form>
 
-          {activeTab === 'users' && (
-            <div className="card">
-              <div className="overview-card-head compact"><h3>Usuarios del panel</h3><span className="ch-meta">{data.users.length} usuarios</span></div>
-              <div className="table-wrapp">
-                <table className="table">
-                  <thead><tr><th>Email</th><th>Tenant</th><th>Tipo</th><th>Roles</th><th>Acciones</th></tr></thead>
-                  <tbody>
-                    {data.users.map(user => (
-                      <tr key={user.id}>
-                        <td>
-                          <strong>{user.email}</strong>
-                          <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-4)' }}>{user.id?.slice(0, 16)}...</div>
-                        </td>
-                        <td>{user.tenant_name || user.tenant?.name || '—'}</td>
-                        <td>{user.tenant_type ? typeBadge(user.tenant_type) : '—'}</td>
-                        <td>
-                          <div className="vmCardTags">
-                            {(user.roles || []).map(r => <span key={r.id || r} className="vmTag">{r.code || r}</span>)}
+          <form onSubmit={submitTenantGroup} style={cardStyle}>
+            <SectionTitle
+              title={tenantGroupForm.id ? 'Editar tenant group' : 'Nuevo tenant group'}
+              subtitle="Unidad operativa que liga usuarios, pools y visibilidad."
+            />
+            <div style={{ display: 'grid', gap: 12 }}>
+              <Field label="Tenant">
+                <select
+                  style={inputStyle}
+                  value={tenantGroupForm.tenant_id}
+                  onChange={(e) => setTenantGroupForm({ ...tenantGroupForm, tenant_id: e.target.value })}
+                >
+                  <option value="">Selecciona un tenant</option>
+                  {tenantOptions.map((tenant) => (
+                    <option key={tenant.id} value={tenant.id}>
+                      {tenant.name} ({tenant.code})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Code">
+                <input
+                  style={inputStyle}
+                  value={tenantGroupForm.code}
+                  onChange={(e) => setTenantGroupForm({ ...tenantGroupForm, code: e.target.value })}
+                />
+              </Field>
+
+              <Field label="Nombre">
+                <input
+                  style={inputStyle}
+                  value={tenantGroupForm.name}
+                  onChange={(e) => setTenantGroupForm({ ...tenantGroupForm, name: e.target.value })}
+                />
+              </Field>
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button style={buttonStyle} disabled={busy || loading}>
+                  {tenantGroupForm.id ? 'Guardar cambios' : 'Crear tenant group'}
+                </button>
+                {tenantGroupForm.id ? (
+                  <button
+                    type="button"
+                    style={ghostButtonStyle}
+                    onClick={() => setTenantGroupForm(emptyTenantGroupForm)}
+                  >
+                    Cancelar
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <form onSubmit={submitUser} style={cardStyle}>
+          <SectionTitle
+            title={userForm.id ? 'Editar usuario' : 'Alta de usuario'}
+            subtitle="Crea o actualiza usuario en Keycloak, registro local y asignación de roles."
+          />
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: 12,
+            }}
+          >
+            <Field label="Username">
+              <input
+                style={inputStyle}
+                value={userForm.username}
+                onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Email">
+              <input
+                style={inputStyle}
+                value={userForm.email}
+                onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Nombre(s)">
+              <input
+                style={inputStyle}
+                value={userForm.firstName}
+                onChange={(e) => setUserForm({ ...userForm, firstName: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Apellidos">
+              <input
+                style={inputStyle}
+                value={userForm.lastName}
+                onChange={(e) => setUserForm({ ...userForm, lastName: e.target.value })}
+              />
+            </Field>
+
+            <Field label={userForm.id ? 'Nuevo password (opcional)' : 'Password inicial'}>
+              <input
+                type="password"
+                style={inputStyle}
+                value={userForm.password}
+                onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Tenant (para visibilidad)">
+              <select
+                style={inputStyle}
+                value={userForm.tenant_id}
+                onChange={(e) => setUserForm({ ...userForm, tenant_id: e.target.value })}
+              >
+                <option value="">Sin tenant</option>
+                {tenantOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.type||'client'})
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Tenant group">
+              <select
+                style={inputStyle}
+                value={userForm.tenant_group_id}
+                onChange={(e) => setUserForm({ ...userForm, tenant_group_id: e.target.value })}
+              >
+                <option value="">Sin tenant group</option>
+                {tenantGroupOptions.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name} ({group.code})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: theme.muted, marginBottom: 10 }}>Roles</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {roleOptions.map((role) => (
+                <label key={role.id} style={chipStyle}>
+                  <input
+                    type="checkbox"
+                    checked={userForm.role_ids.includes(role.id)}
+                    onChange={() => toggleRole(role.id)}
+                  />
+                  <span>{role.code}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+            <button style={buttonStyle} disabled={busy || loading}>
+              {userForm.id ? 'Guardar usuario' : 'Crear usuario'}
+            </button>
+            {userForm.id ? (
+              <button
+                type="button"
+                style={ghostButtonStyle}
+                onClick={() =>
+                  setUserForm({
+                    ...emptyUserForm,
+                    tenant_group_id: tenantGroupOptions[0]?.id || '',
+                  })
+                }
+              >
+                Cancelar edición
+              </button>
+            ) : null}
+          </div>
+        </form>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: 18,
+          }}
+        >
+          <div style={cardStyle}>
+            <SectionTitle title="Tenants" subtitle="Edición y borrado del catálogo superior." />
+            <div style={{ overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={tableHeadCellStyle}>Code</th>
+                    <th style={tableHeadCellStyle}>Nombre</th>
+                    <th style={tableHeadCellStyle}>Tipo</th>
+                    <th style={tableHeadCellStyle}>Status</th>
+                    <th style={tableHeadCellStyle}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tenantOptions.map((tenant) => (
+                    <tr key={tenant.id}>
+                      <td style={{ ...tableCellStyle, fontWeight: 700 }}>{tenant.code}</td>
+                      <td style={tableCellStyle}>{tenant.name}</td>
+                      <td style={tableCellStyle}>
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:999, background: tenant.type==='platform'?'rgba(139,92,246,0.2)':tenant.type==='partner'?'rgba(59,130,246,0.2)':'rgba(34,197,94,0.2)', color: tenant.type==='platform'?'#c4b5fd':tenant.type==='partner'?'#93c5fd':'#86efac' }}>
+                          {tenant.type||'client'}
+                        </span>
+                      </td>
+                      <td style={tableCellStyle}>{tenant.status}</td>
+                      <td style={tableCellStyle}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            style={ghostButtonStyle}
+                            onClick={() =>
+                              setTenantForm({
+                                id: tenant.id,
+                                code: tenant.code,
+                                name: tenant.name,
+                                status: tenant.status || 'ACTIVE',
+                                type: tenant.type || 'client',
+                                parent_tenant_id: tenant.parent_tenant_id || '',
+                              })
+                            }
+                          >
+                            Editar
+                          </button>
+                          <button type="button" style={dangerButtonStyle} onClick={() => deleteTenant(tenant)}>
+                            Borrar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!tenantOptions.length ? (
+                    <tr>
+                      <td style={tableCellStyle} colSpan={4}>Sin registros</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={cardStyle}>
+            <SectionTitle title="Tenant groups" subtitle="Edición, borrado y visualización de pools atados." />
+            <div style={{ overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={tableHeadCellStyle}>Grupo</th>
+                    <th style={tableHeadCellStyle}>Tenant</th>
+                    <th style={tableHeadCellStyle}>Pools</th>
+                    <th style={tableHeadCellStyle}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tenantGroupOptions.map((group) => (
+                    <tr key={group.id}>
+                      <td style={tableCellStyle}>
+                        <strong>{group.name}</strong>
+                        <div style={{ fontSize: 12, color: theme.muted }}>{group.code}</div>
+                      </td>
+                      <td style={tableCellStyle}>{group.tenant?.name || 'n/a'}</td>
+                      <td style={tableCellStyle}>
+                        {(group.pools || []).map((pool) => pool.name).join(', ') || 'Sin pools'}
+                      </td>
+                      <td style={tableCellStyle}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            style={ghostButtonStyle}
+                            onClick={() =>
+                              setTenantGroupForm({
+                                id: group.id,
+                                tenant_id: group.tenant?.id || '',
+                                code: group.code,
+                                name: group.name,
+                              })
+                            }
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            style={dangerButtonStyle}
+                            onClick={() => deleteTenantGroup(group)}
+                          >
+                            Borrar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!tenantGroupOptions.length ? (
+                    <tr>
+                      <td style={tableCellStyle} colSpan={4}>Sin registros</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        </div>}
+
+        {activeTab === 'users' && <div style={{ display: 'grid', gap: 18 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(320px, 1fr) minmax(360px, 1.2fr)',
+            gap: 18,
+          }}
+        >
+          <div style={cardStyle}>
+            <SectionTitle
+              title="Asignación de pools"
+              subtitle="Selecciona un tenant group y define los pools visibles."
+            />
+            <div style={{ display: 'grid', gap: 12 }}>
+              <Field label="Tenant group">
+                <select style={inputStyle} value={poolGroupId} onChange={(e) => setPoolGroupId(e.target.value)}>
+                  <option value="">Selecciona un tenant group</option>
+                  {tenantGroupOptions.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name} ({group.code})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <div style={{ display: 'grid', gap: 8, maxHeight: 280, overflow: 'auto', paddingRight: 4 }}>
+                {poolOptions.map((pool) => (
+                  <label
+                    key={pool.id}
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'center',
+                      padding: '10px 12px',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: 10,
+                      background: theme.card2,
+                      color: theme.pageText,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPoolIds.includes(pool.id)}
+                      onChange={() => togglePool(pool.id)}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{pool.name}</div>
+                      <div style={{ fontSize: 12, color: theme.muted }}>{pool.external_id}</div>
+                    </div>
+                  </label>
+                ))}
+                {!poolOptions.length ? <div style={{ color: theme.muted }}>No hay pools disponibles.</div> : null}
+              </div>
+
+              <button type="button" style={buttonStyle} onClick={savePoolBindings} disabled={busy || !poolGroupId}>
+                Guardar pools
+              </button>
+            </div>
+          </div>
+
+          <div style={cardStyle}>
+            <SectionTitle title="Usuarios" subtitle="Edición, habilitar/deshabilitar y borrado total." />
+            <div style={{ overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={tableHeadCellStyle}>Usuario</th>
+                    <th style={tableHeadCellStyle}>Tenant</th>
+                    <th style={tableHeadCellStyle}>Roles</th>
+                    <th style={tableHeadCellStyle}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.users.map((user) => (
+                    <tr key={user.id}>
+                      <td style={tableCellStyle}>
+                        <div style={{ fontWeight: 700 }}>{user.email}</div>
+                        <div style={{ color: theme.muted, fontSize: 12 }}>{user.keycloak_id}</div>
+                      </td>
+                      <td style={tableCellStyle}>
+                        {user.tenant_name ? (
+                          <div>
+                            <div style={{ fontWeight:600 }}>{user.tenant_name}</div>
+                            <div style={{ fontSize:11, color:'#b8abd9' }}>{user.tenant_type}</div>
                           </div>
-                        </td>
-                        <td><button className="btn btn-danger btn-sm" onClick={() => deleteUser(user)} disabled={busy}>Eliminar</button></td>
-                      </tr>
-                    ))}
-                    {!data.users.length && <tr><td colSpan={5} className="emptyState">Sin usuarios</td></tr>}
-                  </tbody>
-                </table>
-              </div>
+                        ) : 'Sin asignar'}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {(user.roles || []).map((role) => role.code).join(', ') || 'Sin roles'}
+                      </td>
+                      <td style={tableCellStyle}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button type="button" style={ghostButtonStyle} onClick={() => startEditUser(user)}>
+                            Editar
+                          </button>
+                          <button type="button" style={ghostButtonStyle} onClick={() => toggleUserEnabled(user, false)}>
+                            Deshabilitar
+                          </button>
+                          <button type="button" style={ghostButtonStyle} onClick={() => toggleUserEnabled(user, true)}>
+                            Habilitar
+                          </button>
+                          <button type="button" style={dangerButtonStyle} onClick={() => deleteUser(user)}>
+                            Borrar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!data.users.length ? (
+                    <tr>
+                      <td style={tableCellStyle} colSpan={4}>Sin registros</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
+        </div>
 
-          {activeTab === 'assets' && (
-            <div className="card">
-              <div className="overview-card-head compact"><h3>Asignación de activos a clientes</h3><span className="ch-meta">{data.assets.length} activos</span></div>
-              <div className="table-wrapp">
-                <table className="table">
-                  <thead><tr><th>Activo</th><th>OS</th><th>Estado</th><th>Cliente asignado</th></tr></thead>
-                  <tbody>
-                    {data.assets.map(asset => {
-                      const assignment = asset.tenant_assignments?.[0]
-                      return (
-                        <tr key={asset.id}>
-                          <td><strong>{asset.display_name || asset.host_name}</strong><div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-4)' }}>{asset.agent_version}</div></td>
-                          <td>{asset.os_type || '—'}</td>
-                          <td><span className={`vm-status ${asset.agent_status === 'online' ? 'running' : 'stopped'}`}>{asset.agent_status || '—'}</span></td>
-                          <td>
-                            <select className="select" style={{ minWidth: 180 }} value={assignment?.tenant_id || ''} onChange={e => assignAsset(asset.id, e.target.value)}>
-                              <option value="">Sin asignar</option>
-                              {clientTenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {!data.assets.length && <tr><td colSpan={4} className="emptyState">Sin activos</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
 
-          {activeTab === 'vms' && (
-            <div className="card">
-              <div className="overview-card-head compact"><h3>Inventario VM</h3><span className="ch-meta">{(data.vms||[]).length} VMs</span></div>
-              <div className="table-wrapp">
-                <table className="table">
-                  <thead><tr><th>VM</th><th>VMID</th><th>Nodo</th><th>Grupo</th><th>Estado</th></tr></thead>
-                  <tbody>
-                    {(data.vms||[]).map(vm => (
-                      <tr key={vm.vmid} style={{ cursor: 'pointer' }} onClick={() => router.push(`/vms/${vm.vmid}`)}>
-                        <td><strong>{vm.name || `VM ${vm.vmid}`}</strong></td>
-                        <td><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{vm.vmid}</span></td>
-                        <td>{vm.node || '—'}</td>
-                        <td>{vm.pool_id ? <span className="vmTag">{vm.pool_id}</span> : '—'}</td>
-                        <td><span className={`vm-status ${vm.status === 'running' ? 'running' : 'stopped'}`}>{vm.status || '—'}</span></td>
-                      </tr>
-                    ))}
-                    {!(data.vms||[]).length && <tr><td colSpan={5} className="emptyState">Sin VMs</td></tr>}
-                  </tbody>
-                </table>
+        </div>}
+
+        {activeTab === 'assets' && <div style={cardStyle}>
+          <SectionTitle
+            title="Asignar activos a clientes"
+            subtitle="Define qué activos monitoreados pertenecen a cada cliente final."
+          />
+          <div style={{ overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={tableHeadCellStyle}>Activo</th>
+                  <th style={tableHeadCellStyle}>OS</th>
+                  <th style={tableHeadCellStyle}>Status agente</th>
+                  <th style={tableHeadCellStyle}>Cliente asignado</th>
+                  <th style={tableHeadCellStyle}>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assets.map((asset) => {
+                  const assignment = asset.tenant_assignments?.[0]
+                  const assignedTenant = assignment?.tenant_id
+                    ? tenantOptions.find(t => t.id === assignment.tenant_id)
+                    : null
+                  return (
+                    <tr key={asset.id}>
+                      <td style={tableCellStyle}>
+                        <div style={{ fontWeight: 700 }}>{asset.display_name || asset.host_name}</div>
+                        <div style={{ fontSize: 11, color: '#b8abd9' }}>{asset.agent_version}</div>
+                      </td>
+                      <td style={tableCellStyle}>{asset.os_type || '—'}</td>
+                      <td style={tableCellStyle}>
+                        <span style={{ color: asset.agent_status === 'online' ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+                          {asset.agent_status || '—'}
+                        </span>
+                      </td>
+                      <td style={tableCellStyle}>
+                        <select
+                          style={{ ...inputStyle, width: 200 }}
+                          value={assignment?.tenant_id || ''}
+                          onChange={async (e) => {
+                            const tenantId = e.target.value
+                            try {
+                              if (tenantId) {
+                                await request(`/api/admin/assets/${asset.id}/assign`, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ tenantId }),
+                                })
+                              } else {
+                                await request(`/api/admin/assets/${asset.id}/assign`, { method: 'DELETE' })
+                              }
+                              const updated = await request('/api/admin/assets').catch(() => [])
+                              setAssets(Array.isArray(updated) ? updated : [])
+                              setSuccess('Asignación guardada')
+                            } catch (err) {
+                              setError(err.message || 'Error al asignar')
+                            }
+                          }}
+                        >
+                          <option value="">Sin asignar</option>
+                          {tenantOptions.filter(t => t.type === 'client').map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={tableCellStyle}>
+                        {assignedTenant && (
+                          <span style={{ fontSize: 11, color: '#86efac' }}>✓ {assignedTenant.name}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {!assets.length && (
+                  <tr><td colSpan={5} style={tableCellStyle}>Sin activos</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>}
+
+        {activeTab === 'vms' && <div style={cardStyle}>
+          <SectionTitle
+            title="Inventario VM"
+            subtitle="Mantenimiento rápido de observabilidad y catálogos del inventario local."
+          />
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(280px, 0.95fr) minmax(320px, 1.05fr)',
+              gap: 18,
+            }}
+          >
+            <div>
+              <div style={{ marginBottom: 12 }}>
+                <input
+                  style={inputStyle}
+                  placeholder="Buscar VM por nombre, vmid, nodo o pool"
+                  value={vmSearch}
+                  onChange={(e) => setVmSearch(e.target.value)}
+                />
+              </div>
+
+              <div style={{ maxHeight: 420, overflow: 'auto', display: 'grid', gap: 8 }}>
+                {filteredVms.map((vm) => (
+                  <button
+                    key={vm.vmid}
+                    type="button"
+                    onClick={() => setSelectedVmId(String(vm.vmid))}
+                    style={{
+                      textAlign: 'left',
+                      padding: 12,
+                      borderRadius: 12,
+                      border:
+                        selectedVmId === String(vm.vmid)
+                          ? `2px solid ${theme.primary}`
+                          : `1px solid ${theme.border}`,
+                      background: selectedVmId === String(vm.vmid) ? theme.card3 : theme.card2,
+                      color: theme.pageText,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <strong>{vm.name || `VM ${vm.vmid}`}</strong>
+                      <span style={{ color: theme.muted }}>{vm.status || 'unknown'}</span>
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: theme.muted }}>
+                      vmid: {vm.vmid} · nodo: {vm.node || 'n/a'} · pool: {vm.pool_id || 'sin pool'}
+                    </div>
+                  </button>
+                ))}
+                {!filteredVms.length ? <div style={{ color: theme.muted }}>No hay VMs para mostrar.</div> : null}
               </div>
             </div>
-          )}
-        </>
-      )}
+
+            <form onSubmit={saveVm} style={{ display: 'grid', gap: 12 }}>
+              {!selectedVmId ? (
+                <div style={{ color: theme.muted, fontSize: 14 }}>Selecciona una VM para editarla.</div>
+              ) : (
+                <>
+                  <Field label="OS type">
+                    <select
+                      style={inputStyle}
+                      value={vmForm.os_type}
+                      onChange={(e) => setVmForm({ ...vmForm, os_type: e.target.value })}
+                    >
+                      <option value="">Sin definir</option>
+                      <option value="windows">windows</option>
+                      <option value="linux">linux</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Elastic host name">
+                    <input
+                      style={inputStyle}
+                      value={vmForm.elastic_host_name}
+                      onChange={(e) => setVmForm({ ...vmForm, elastic_host_name: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Kibana base URL">
+                    <input
+                      style={inputStyle}
+                      value={vmForm.kibana_base_url}
+                      onChange={(e) => setVmForm({ ...vmForm, kibana_base_url: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Monitored services">
+                    <textarea
+                      style={textareaStyle}
+                      value={vmForm.monitored_services}
+                      onChange={(e) => setVmForm({ ...vmForm, monitored_services: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Tenant">
+                    <select
+                      style={inputStyle}
+                      value={vmForm.tenant_id}
+                      onChange={(e) => setVmForm({ ...vmForm, tenant_id: e.target.value })}
+                    >
+                      <option value="">Sin tenant</option>
+                      {tenantOptions.map((tenant) => (
+                        <option key={tenant.id} value={tenant.id}>
+                          {tenant.name} ({tenant.code})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Tenant group">
+                    <select
+                      style={inputStyle}
+                      value={vmForm.tenant_group_id}
+                      onChange={(e) => setVmForm({ ...vmForm, tenant_group_id: e.target.value })}
+                    >
+                      <option value="">Sin tenant group</option>
+                      {tenantGroupOptions.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name} ({group.code})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 14,
+                      color: theme.pageText,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={vmForm.observability_enabled}
+                      onChange={(e) =>
+                        setVmForm({ ...vmForm, observability_enabled: e.target.checked })
+                      }
+                    />
+                    Observabilidad habilitada
+                  </label>
+
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button style={buttonStyle} disabled={busy || loading}>
+                      Guardar VM
+                    </button>
+                    <button type="button" style={dangerButtonStyle} onClick={deleteVm}>
+                      Borrar VM local
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          </div>
+        </div>}
+      </div>
     </AppShell>
   )
 }

@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import AttackWorldMap from '../components/AttackWorldMap'
-import AttackTopList from '../components/AttackTopList'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 import AppShell, { ShellIcon } from '../components/AppShell'
-import { apiEventStream, apiJson } from '../lib/auth'
+import { apiJson } from '../lib/auth'
 import { exportToCSV } from '../lib/panel'
 import { usePolling } from '../hooks/usePolling'
 
@@ -76,9 +74,6 @@ export default function OverviewPage() {
   const [vms, setVms] = useState([])
   const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [attackMap, setAttackMap] = useState(null)
-  const [liveAttackEvents, setLiveAttackEvents] = useState([])
-  const [liveMeta, setLiveMeta] = useState({ connected: false, lastPulseAt: null, lastError: null, liveWindowMs: 90000 })
   const [search, setSearch] = useState('')
   const [metric, setMetric] = useState('cpu')
 
@@ -102,117 +97,6 @@ export default function OverviewPage() {
     }
   }, [])
   usePolling(fetchMetrics, (data) => { if (data) setMetrics(data) }, 30000, true)
-
-  const fetchAttackMap = useCallback(async (signal) => {
-    try {
-      return await apiJson('/api/overview/attack-map?range=24h', { signal })
-    } catch (e) {
-      console.error('overview attack-map poll failed', e)
-      return null
-    }
-  }, [])
-
-  usePolling(fetchAttackMap, (data) => {
-    if (data) setAttackMap(data)
-  }, 60000, true)
-
-  useEffect(() => {
-    let cancelled = false
-    let retryTimer = null
-    let controller = null
-
-    const ttlMs = 90000
-
-    const connect = async () => {
-      controller = new AbortController()
-      setLiveMeta((prev) => ({ ...prev, connected: false, lastError: null, liveWindowMs: ttlMs }))
-
-      try {
-        await apiEventStream(`/api/overview/attack-map/live?windowSec=${Math.floor(ttlMs / 1000)}&pollMs=3000`, {
-          signal: controller.signal,
-          onOpen: () => {
-            if (cancelled) return
-            setLiveMeta((prev) => ({ ...prev, connected: true, lastError: null }))
-          },
-          onMessage: ({ event, data }) => {
-            if (cancelled) return
-
-            if (event === 'ready' || event === 'heartbeat') {
-              setLiveMeta((prev) => ({
-                ...prev,
-                connected: true,
-                lastPulseAt: data?.emittedAt || new Date().toISOString(),
-                liveWindowMs: (data?.liveWindowSec || Math.floor(ttlMs / 1000)) * 1000,
-              }))
-              return
-            }
-
-            if (event === 'error') {
-              setLiveMeta((prev) => ({ ...prev, connected: false, lastError: data?.message || 'stream error' }))
-              return
-            }
-
-            if (event !== 'snapshot') return
-
-            const emittedAt = data?.emittedAt || new Date().toISOString()
-            const incoming = Array.isArray(data?.events) ? data.events : []
-            setLiveMeta((prev) => ({
-              ...prev,
-              connected: true,
-              lastPulseAt: emittedAt,
-              liveWindowMs: (data?.liveWindowSec || Math.floor(ttlMs / 1000)) * 1000,
-            }))
-
-            setLiveAttackEvents((prev) => {
-              const now = Date.now()
-              const expiresBefore = now - ttlMs
-              const map = new Map()
-
-              prev.forEach((item) => {
-                const ts = new Date(item.timestamp || item.lastSeen || 0).getTime()
-                if (Number.isFinite(ts) && ts >= expiresBefore) {
-                  map.set(item.eventId || `${item.timestamp}:${item.ip}`, item)
-                }
-              })
-
-              incoming.forEach((item) => {
-                const key = item.eventId || `${item.timestamp}:${item.ip}`
-                map.set(key, item)
-              })
-
-              return Array.from(map.values())
-                .filter((item) => {
-                  const ts = new Date(item.timestamp || item.lastSeen || 0).getTime()
-                  return Number.isFinite(ts) && ts >= expiresBefore
-                })
-                .sort((a, b) => new Date(a.timestamp || a.lastSeen || 0).getTime() - new Date(b.timestamp || b.lastSeen || 0).getTime())
-                .slice(-120)
-            })
-          },
-          onError: (err) => {
-            console.error('overview attack-map live parse failed', err)
-          },
-        })
-      } catch (e) {
-        if (cancelled || e?.name === 'AbortError') return
-        console.error('overview attack-map live stream failed', e)
-        setLiveMeta((prev) => ({ ...prev, connected: false, lastError: e?.message || 'stream disconnected' }))
-      }
-
-      if (!cancelled) {
-        setLiveMeta((prev) => ({ ...prev, connected: false }))
-        retryTimer = window.setTimeout(connect, 2500)
-      }
-    }
-
-    connect()
-
-    return () => {
-      cancelled = true
-      if (retryTimer) window.clearTimeout(retryTimer)
-      controller?.abort()
-    }
-  }, [])
 
   const overview = useMemo(() => {
     const totalAssets     = assets.length
@@ -261,50 +145,6 @@ export default function OverviewPage() {
     })), `overview-assets-${new Date().toISOString().slice(0, 10)}.csv`)
   }
 
-  const attackDiagnostics = attackMap?.diagnostics || null
-
-  const liveAttackMap = useMemo(() => {
-    const destination = attackMap?.destination || null
-    const totalEvents = liveAttackEvents.length
-    const grouped = new Map()
-    const countries = new Map()
-    let lastEventAt = null
-
-    for (const event of liveAttackEvents) {
-      const key = event.ip
-      countries.set(event.country || 'Unknown', (countries.get(event.country || 'Unknown') || 0) + 1)
-      const seen = grouped.get(key)
-      if (!seen) grouped.set(key, { ...event, count: 1 })
-      else {
-        seen.count += 1
-        if (new Date(event.timestamp || 0).getTime() > new Date(seen.lastSeen || 0).getTime()) {
-          seen.lastSeen = event.timestamp
-          seen.targetHost = event.targetHost
-          seen.severity = event.severity
-        }
-      }
-      if (!lastEventAt || new Date(event.timestamp || 0).getTime() > new Date(lastEventAt).getTime()) {
-        lastEventAt = event.timestamp
-      }
-    }
-
-    const topCountry = Array.from(countries.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
-
-    return {
-      destination,
-      events: liveAttackEvents,
-      streamConnected: liveMeta.connected,
-      liveWindowMs: liveMeta.liveWindowMs,
-      summary: {
-        totalEvents,
-        uniqueSourceIps: grouped.size,
-        topCountry,
-        lastEventAt,
-      },
-      diagnostics: attackDiagnostics,
-    }
-  }, [attackMap, attackDiagnostics, liveAttackEvents, liveMeta])
-
   return (
     <AppShell
       title="Infrastructure overview"
@@ -315,7 +155,6 @@ export default function OverviewPage() {
       navCounts={overview.navCounts}
       actions={
         <div className="overview-toolbar">
-          <span className="live-dot">{liveMeta.connected ? 'LIVE · stream' : 'RECONNECTING'}</span>
           <button className="chip active">Last 24h</button>
           <button className="btn btn-secondary" onClick={handleExport}><ShellIcon name="export" /> Export</button>
           <button className="btn btn-primary" onClick={() => router.push('/admin')}><ShellIcon name="plus" /> Add asset</button>
@@ -389,50 +228,6 @@ export default function OverviewPage() {
               </div>
             </aside>
           </div>
-
-          <div className="overview-attack-grid">
-            <section className="card overview-attack-map-card">
-              <div className="overview-card-head">
-                <div>
-                  <h3>Global attack map</h3>
-                  <span className="ch-meta">Live stream real · buffer 90s · ranking lateral 24h</span>
-                </div>
-              </div>
-
-              {!liveAttackMap?.events?.length ? (
-                <div
-                  style={{
-                    minHeight: 420,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexDirection: 'column',
-                    gap: 10,
-                    color: 'var(--text-4)',
-                    fontSize: 13,
-                    fontFamily: 'var(--font-mono)',
-                    textAlign: 'center',
-                    padding: '0 18px',
-                  }}
-                >
-                  <div>Sin eventos live geolocalizados en la ventana activa.</div>
-                  {attackDiagnostics?.matchedEvents > 0 && (
-                    <div style={{ maxWidth: 760, lineHeight: 1.6 }}>
-                      Se detectaron {attackDiagnostics.matchedEvents} eventos sospechosos, pero solo {attackDiagnostics.eventsWithGeo} contienen <code>source.geo.location</code>.
-                      Revisa el enrichment GeoIP o el pipeline que copia <code>winlog.event_data.IpAddress</code> hacia <code>source.ip</code>.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <AttackWorldMap data={liveAttackMap} />
-              )}
-            </section>
-
-            <aside className="card overview-attack-side-card">
-              <AttackTopList data={attackMap} />
-            </aside>
-          </div>
-
           {search && (
             <div className="card cardPad" style={{ marginTop: 18 }}>
               <div className="sectionTitle" style={{ fontSize: 16, marginBottom: 12 }}>Resultados para "{search}"</div>

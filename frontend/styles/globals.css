@@ -7,28 +7,84 @@
 
 .overview-attack-map-card,
 .overview-attack-side-card {
-  min-height: 440px;
+  min-height: 460px;
 }
 
 .attack-world-wrap {
   position: relative;
-  min-height: 420px;
-  border-radius: 18px;
+  min-height: 440px;
+  border-radius: 22px;
   overflow: hidden;
+  border: 1px solid rgba(103, 232, 249, 0.14);
   background:
-    radial-gradient(circle at top, rgba(99,102,241,0.12), transparent 30%),
-    linear-gradient(180deg, rgba(10,14,22,0.92), rgba(9,12,20,0.98));
+    radial-gradient(circle at 20% 10%, rgba(34, 211, 238, 0.14), transparent 32%),
+    radial-gradient(circle at 80% 90%, rgba(59, 130, 246, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(3, 8, 15, 0.98), rgba(5, 12, 22, 0.99));
+  box-shadow:
+    inset 0 0 0 1px rgba(103, 232, 249, 0.04),
+    inset 0 -60px 100px rgba(15, 23, 42, 0.35),
+    0 22px 60px rgba(2, 6, 23, 0.45);
+}
+
+.attack-world-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.28;
+  pointer-events: none;
 }
 
 .attack-world-stage {
+  position: relative;
   width: 100%;
-  height: 420px;
+  height: 440px;
+  isolation: isolate;
+}
+
+.attack-world-stage svg {
+  position: relative;
+  z-index: 2;
+}
+
+.attack-world-live-badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(3, 8, 15, 0.76);
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  color: #a5f3fc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  backdrop-filter: blur(14px);
+}
+
+.attack-world-live-badge::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.95);
+  animation: attack-live-pulse 1.2s ease-in-out infinite;
 }
 
 .attack-world-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 3;
 }
 
 .attack-world-summary {
@@ -42,52 +98,204 @@
 
 .attack-world-summary > div {
   pointer-events: auto;
-  background: rgba(8,12,20,0.72);
-  border: 1px solid rgba(148,163,184,0.12);
-  border-radius: 12px;
+  min-width: 132px;
+  background: rgba(3, 8, 15, 0.74);
+  border: 1px solid rgba(103, 232, 249, 0.12);
+  border-radius: 14px;
   padding: 10px 12px;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .attack-world-summary span {
   display: block;
-  font-size: 11px;
-  color: var(--text-4);
-  margin-bottom: 4px;
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.86);
+  margin-bottom: 5px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
 }
 
 .attack-world-summary strong {
-  font-size: 16px;
-  color: var(--text-1);
+  font-size: 15px;
+  color: #e2f8ff;
 }
 
 .attack-world-tooltip {
   position: absolute;
   right: 14px;
   bottom: 14px;
-  min-width: 260px;
-  max-width: 320px;
-  background: rgba(8,12,20,0.8);
-  border: 1px solid rgba(148,163,184,0.14);
-  border-radius: 14px;
-  padding: 12px 14px;
-  backdrop-filter: blur(12px);
+  min-width: 300px;
+  max-width: 360px;
+  background: rgba(3, 8, 15, 0.8);
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 16px;
+  padding: 14px 16px;
+  backdrop-filter: blur(16px);
   pointer-events: auto;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+}
+
+.attack-tip-eyebrow {
+  font-size: 10px;
+  color: #67e8f9;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 700;
 }
 
 .attack-tip-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-1);
   margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+
+.attack-tip-route {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.attack-tip-route strong {
+  color: #67e8f9;
 }
 
 .attack-tip-row {
   font-size: 12px;
   color: var(--text-3);
-  margin-bottom: 4px;
+  margin-bottom: 5px;
+}
+
+.attack-tip-row strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.attack-trace,
+.attack-trace-glow {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.attack-trace-glow {
+  opacity: 0.28;
+  filter: drop-shadow(0 0 12px rgba(34, 211, 238, 0.2));
+}
+
+.attack-trace {
+  opacity: 0.72;
+  stroke-dasharray: 10 14;
+  animation: attack-trace-flow var(--trace-duration, 2.2s) linear infinite;
+}
+
+.attack-trace.is-active {
+  opacity: 1;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+.attack-origin-ping {
+  fill: currentColor;
+  opacity: 0.12;
+  animation: attack-origin-pulse 2.2s ease-out infinite;
+}
+
+.attack-origin-core {
+  fill: currentColor;
+  stroke: rgba(255, 255, 255, 0.82);
+  stroke-width: 0.8;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+.attack-origin.is-active .attack-origin-core {
+  stroke-width: 1.2;
+}
+
+.attack-destination-label {
+  fill: #cffafe;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.attack-destination-ring {
+  fill: none;
+  stroke: rgba(103, 232, 249, 0.42);
+  stroke-width: 1.4;
+  transform-origin: center;
+  animation: attack-destination-pulse 2.8s ease-out infinite;
+}
+
+.attack-destination-ring.ring-2 {
+  animation-delay: 0.7s;
+}
+
+.attack-destination-ring.ring-3 {
+  animation-delay: 1.4s;
+}
+
+.attack-destination-core {
+  fill: #67e8f9;
+  stroke: rgba(240, 253, 255, 0.95);
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 12px rgba(103, 232, 249, 0.88));
+}
+
+@keyframes attack-trace-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -72;
+  }
+}
+
+@keyframes attack-origin-pulse {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@keyframes attack-destination-pulse {
+  0% {
+    opacity: 0.54;
+    transform: scale(0.9);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@keyframes attack-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
 }
 
 .attack-top-list {
@@ -165,9 +373,17 @@
   .attack-world-tooltip {
     position: static;
     margin: 12px;
+    min-width: 0;
+    max-width: none;
   }
 
   .attack-world-stage {
     height: 360px;
+  }
+
+  .attack-world-live-badge {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
   }
 }

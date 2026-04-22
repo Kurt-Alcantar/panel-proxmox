@@ -59,6 +59,21 @@ export class OverviewController {
     return null
   }
 
+  private parseOptionalNumber(raw: any, fallback: number): number {
+    const num = Number(raw)
+    return Number.isFinite(num) ? num : fallback
+  }
+
+  private getAttackMapDestination() {
+    return {
+      label: process.env.ATTACK_MAP_DEST_LABEL || 'Protected infrastructure',
+      location: {
+        lat: this.parseOptionalNumber(process.env.ATTACK_MAP_DEST_LAT, 23.6345),
+        lon: this.parseOptionalNumber(process.env.ATTACK_MAP_DEST_LON, -102.5528),
+      },
+    }
+  }
+
   @Get('metrics')
   async getMetrics(@Query('range') range = '24h', @Req() req: any) {
     const hours = range === '7d' ? 168 : range === '48h' ? 48 : 24
@@ -276,6 +291,7 @@ export class OverviewController {
           uniqueSourceIps: points.length,
           topCountry,
         },
+        destination: this.getAttackMapDestination(),
         diagnostics: {
           matchedEvents: totalMatched,
           eventsWithIp,
@@ -289,6 +305,7 @@ export class OverviewController {
       this.logger.error(`attack-map query failed: ${e?.message || e}`)
       return {
         summary: { totalEvents: 0, uniqueSourceIps: 0, topCountry: 'Unknown' },
+        destination: this.getAttackMapDestination(),
         diagnostics: { matchedEvents: 0, eventsWithIp: 0, eventsUsingWinlogIp: 0, eventsWithGeo: 0, returnedPoints: 0 },
         points: [],
       }

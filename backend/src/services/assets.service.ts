@@ -44,11 +44,22 @@ export class AssetsService {
     let tenantType: string | null = null
     let childTenantIds: string[] = []
 
+    if (!tenantId && user.tenant_group_id) {
+      const tenantGroup = await this.prisma.tenant_groups.findUnique({
+        where: { id: user.tenant_group_id },
+        select: { tenant_id: true },
+      })
+      tenantId = tenantGroup?.tenant_id ?? null
+    }
+
     if (tenantId) {
-      const tenant = await this.prisma.tenants.findUnique({ where: { id: tenantId } })
+      const tenant = await this.prisma.tenants.findUnique({
+        where: { id: tenantId },
+        select: { id: true, type: true },
+      })
+
       tenantType = tenant?.type ?? null
 
-      // Si es partner, obtener sus clientes (hijos directos)
       if (isPartnerAdmin || tenantType === 'partner') {
         const children = await this.prisma.tenants.findMany({
           where: { parent_tenant_id: tenantId, type: 'client' },

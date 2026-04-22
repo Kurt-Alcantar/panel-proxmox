@@ -1,17 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import {
-  ComposableMap,
-  Geographies,
-  Geography,
-  Graticule,
-  Line,
-  Marker,
-  Sphere,
-  ZoomableGroup,
-} from 'react-simple-maps'
-
-const GEO_URL =
-  'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+import { useEffect, useRef, useMemo, useState } from 'react'
 
 const DEFAULT_DESTINATION = {
   label: 'Protected infrastructure',
@@ -19,17 +6,10 @@ const DEFAULT_DESTINATION = {
 }
 
 function severityColor(severity) {
-  if (severity === 'critical') return 'rgba(255, 76, 76, 0.98)'
-  if (severity === 'high') return 'rgba(255, 149, 0, 0.96)'
-  if (severity === 'medium') return 'rgba(255, 214, 10, 0.94)'
-  return 'rgba(82, 255, 168, 0.9)'
-}
-
-function traceWidth(count) {
-  if (count >= 100) return 2.8
-  if (count >= 40) return 2.2
-  if (count >= 10) return 1.8
-  return 1.35
+  if (severity === 'critical') return '#ff4c4c'
+  if (severity === 'high') return '#ff9500'
+  if (severity === 'medium') return '#ffd60a'
+  return '#52ffa8'
 }
 
 function formatLastSeen(ts) {
@@ -40,8 +20,10 @@ function formatLastSeen(ts) {
 }
 
 export default function AttackWorldMap({ data }) {
-  const [hovered, setHovered] = useState(null)
-  const [activeIndex, setActiveIndex] = useState(0)
+  const mountRef = useRef(null)
+  const globeRef = useRef(null)
+  const [activePoint, setActivePoint] = useState(null)
+  const [GlobeLib, setGlobeLib] = useState(null)
 
   const destination = useMemo(() => {
     const lat = Number(data?.destination?.location?.lat)
@@ -57,122 +39,161 @@ export default function AttackWorldMap({ data }) {
 
   const visiblePoints = useMemo(() => (data?.points || []).slice(0, 24), [data])
 
+  // Load globe.gl dynamically (SSR safe)
   useEffect(() => {
-    if (!visiblePoints.length) return undefined
-    const id = setInterval(() => {
-      setActiveIndex((current) => (current + 1) % visiblePoints.length)
-    }, 1400)
-    return () => clearInterval(id)
-  }, [visiblePoints.length])
+    import('globe.gl').then((mod) => {
+      setGlobeLib(() => mod.default)
+    })
+  }, [])
 
-  const activePoint = hovered || (visiblePoints.length ? visiblePoints[activeIndex % visiblePoints.length] : null)
+  // Build/rebuild globe when lib or container is ready
+  useEffect(() => {
+    if (!GlobeLib || !mountRef.current) return
+
+    const el = mountRef.current
+    const width = el.clientWidth || 700
+    const height = el.clientHeight || 460
+
+    // Destroy previous instance
+    if (globeRef.current) {
+      globeRef.current._destructor?.()
+      el.innerHTML = ''
+    }
+
+    const globe = GlobeLib()(el)
+    globeRef.current = globe
+
+    globe
+      .width(width)
+      .height(height)
+      .backgroundColor('rgba(0,0,0,0)')
+      .showAtmosphere(true)
+      .atmosphereColor('rgba(103,232,249,0.25)')
+      .atmosphereAltitude(0.18)
+      .globeImageUrl(
+        'https://unpkg.com/three-globe@2.31.0/example/img/earth-dark.jpg'
+      )
+      .bumpImageUrl(
+        'https://unpkg.com/three-globe@2.31.0/example/img/earth-topology.png'
+      )
+
+    // Auto-rotate
+    globe.controls().autoRotate = true
+    globe.controls().autoRotateSpeed = 0.4
+    globe.controls().enableZoom = true
+    globe.controls().minDistance = 150
+    globe.controls().maxDistance = 600
+
+    // Point of view centred on Mexico (destination)
+    globe.pointOfView(
+      { lat: destination.location.lat, lng: destination.location.lon, altitude: 2.2 },
+      0
+    )
+
+    return () => {
+      globeRef.current?._destructor?.()
+      if (el) el.innerHTML = ''
+      globeRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [GlobeLib])
+
+  // Update arcs, rings and labels whenever data changes
+  useEffect(() => {
+    const globe = globeRef.current
+    if (!globe) return
+
+    // --- Arcs (attack paths) ---
+    const arcs = visiblePoints.map((point, i) => ({
+      startLat: point.location.lat,
+      startLng: point.location.lon,
+      endLat: destination.location.lat,
+      endLng: destination.location.lon,
+      color: severityColor(point.severity),
+      stroke: point.severity === 'critical' ? 1.2 : 0.7,
+      dashLength: 0.4,
+      dashGap: 0.2,
+      animateTime: Math.max(800, 2000 - i * 50),
+      _point: point,
+    }))
+
+    globe
+      .arcsData(arcs)
+      .arcColor('color')
+      .arcStroke('stroke')
+      .arcDashLength('dashLength')
+      .arcDashGap('dashGap')
+      .arcDashAnimateTime('animateTime')
+      .arcAltitude(0.3)
+      .onArcHover((arc) => setActivePoint(arc ? arc._point : null))
+
+    // --- Origin rings ---
+    const rings = visiblePoints.map((point) => ({
+      lat: point.location.lat,
+      lng: point.location.lon,
+      maxR: point.severity === 'critical' ? 3.5 : 2.2,
+      propagationSpeed: 2,
+      repeatPeriod: 900,
+      color: severityColor(point.severity),
+    }))
+
+    globe
+      .ringsData(rings)
+      .ringColor('color')
+      .ringMaxRadius('maxR')
+      .ringPropagationSpeed('propagationSpeed')
+      .ringRepeatPeriod('repeatPeriod')
+
+    // --- Destination point ---
+    const destPoint = [
+      {
+        lat: destination.location.lat,
+        lng: destination.location.lon,
+        size: 0.6,
+        color: '#67e8f9',
+        label: destination.label,
+      },
+    ]
+
+    globe
+      .pointsData(destPoint)
+      .pointColor('color')
+      .pointAltitude('size')
+      .pointRadius(0.5)
+      .pointLabel('label')
+
+    // --- HTML Labels for origin IPs ---
+    const labels = visiblePoints.map((point) => ({
+      lat: point.location.lat,
+      lng: point.location.lon,
+      text: point.ip,
+      color: severityColor(point.severity),
+      size: 0.4,
+      _point: point,
+    }))
+
+    globe
+      .labelsData(labels)
+      .labelLat('lat')
+      .labelLng('lng')
+      .labelText('text')
+      .labelColor('color')
+      .labelSize('size')
+      .labelDotRadius(0.3)
+      .labelResolution(2)
+  }, [visiblePoints, destination])
 
   return (
-    <div className="attack-world-wrap attack-world-wrap-kaspersky">
-      <div className="attack-world-stage">
-        <div className="attack-world-live-badge">LIVE TELEMETRY</div>
-
-        <ComposableMap
-          projection="geoEqualEarth"
-          projectionConfig={{ scale: 175 }}
-          style={{ width: '100%', height: '100%' }}
-        >
-          <Sphere
-            fill="transparent"
-            stroke="rgba(103, 232, 249, 0.18)"
-            strokeWidth={0.8}
-          />
-          <Graticule stroke="rgba(94, 234, 212, 0.08)" strokeWidth={0.35} />
-
-          <ZoomableGroup center={[0, 15]} zoom={1.02}>
-            <Geographies geography={GEO_URL}>
-              {({ geographies }) =>
-                geographies.map((geo) => (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    style={{
-                      default: {
-                        fill: '#08111d',
-                        stroke: 'rgba(103, 232, 249, 0.14)',
-                        strokeWidth: 0.55,
-                        outline: 'none',
-                      },
-                      hover: {
-                        fill: '#0d1a2c',
-                        stroke: 'rgba(103, 232, 249, 0.22)',
-                        strokeWidth: 0.55,
-                        outline: 'none',
-                      },
-                      pressed: {
-                        fill: '#0d1a2c',
-                        stroke: 'rgba(103, 232, 249, 0.22)',
-                        strokeWidth: 0.55,
-                        outline: 'none',
-                      },
-                    }}
-                  />
-                ))
-              }
-            </Geographies>
-
-            {visiblePoints.map((point, index) => {
-              const isActive = activePoint?.ip === point.ip
-              const duration = `${Math.max(1.35, 2.6 - index * 0.06)}s`
-              const severity = point.severity || 'low'
-              return (
-                <g key={`${point.ip}-${point.location?.lat}-${point.location?.lon}`}>
-                  <Line
-                    from={[point.location.lon, point.location.lat]}
-                    to={[destination.location.lon, destination.location.lat]}
-                    stroke="rgba(103, 232, 249, 0.1)"
-                    strokeWidth={traceWidth(point.count) + 2.4}
-                    className="attack-trace-glow"
-                  />
-                  <Line
-                    from={[point.location.lon, point.location.lat]}
-                    to={[destination.location.lon, destination.location.lat]}
-                    stroke={severityColor(severity)}
-                    strokeWidth={traceWidth(point.count)}
-                    className={`attack-trace attack-trace-${severity}${isActive ? ' is-active' : ''}`}
-                    style={{ '--trace-duration': duration }}
-                    onMouseEnter={() => setHovered(point)}
-                    onMouseLeave={() => setHovered(null)}
-                  />
-                </g>
-              )
-            })}
-
-            {visiblePoints.map((point) => {
-              const isActive = activePoint?.ip === point.ip
-              return (
-                <Marker
-                  key={`origin-${point.ip}`}
-                  coordinates={[point.location.lon, point.location.lat]}
-                  onMouseEnter={() => setHovered(point)}
-                  onMouseLeave={() => setHovered(null)}
-                >
-                  <g className={`attack-origin${isActive ? ' is-active' : ''}`} style={{ color: severityColor(point.severity) }}>
-                    <circle className="attack-origin-ping" r={isActive ? 8 : 6.5} />
-                    <circle className="attack-origin-core" r={isActive ? 3.8 : 3.1} />
-                  </g>
-                </Marker>
-              )
-            })}
-
-            <Marker coordinates={[destination.location.lon, destination.location.lat]}>
-              <g className="attack-destination">
-                <circle className="attack-destination-ring ring-1" r="12" />
-                <circle className="attack-destination-ring ring-2" r="18" />
-                <circle className="attack-destination-ring ring-3" r="24" />
-                <circle className="attack-destination-core" r="5" />
-                <text className="attack-destination-label" y={-28} textAnchor="middle">
-                  {destination.label}
-                </text>
-              </g>
-            </Marker>
-          </ZoomableGroup>
-        </ComposableMap>
+    <div className="attack-world-wrap attack-world-wrap-kaspersky" style={{ position: 'relative' }}>
+      <div
+        className="attack-world-stage"
+        style={{ position: 'relative', width: '100%', height: '100%', minHeight: 460 }}
+      >
+        <div className="attack-world-live-badge">LIVE TELEMETRY 3D</div>
+        <div
+          ref={mountRef}
+          style={{ width: '100%', height: '100%', minHeight: 460, cursor: 'grab' }}
+        />
       </div>
 
       <div className="attack-world-overlay">
@@ -212,9 +233,9 @@ export default function AttackWorldMap({ data }) {
             </>
           ) : (
             <>
-              <div className="attack-tip-eyebrow">Mapa táctico</div>
+              <div className="attack-tip-eyebrow">Mapa táctico 3D</div>
               <div className="attack-tip-title">Sin rutas activas</div>
-              <div className="attack-tip-row">Cuando haya eventos con GeoIP se dibujarán flujos hacia el servidor protegido.</div>
+              <div className="attack-tip-row">Pasa el cursor sobre un arco para ver los detalles del ataque.</div>
             </>
           )}
         </div>

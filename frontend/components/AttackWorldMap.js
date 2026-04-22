@@ -13,11 +13,11 @@ function severityColor(severity) {
   return '#52ffa8'
 }
 
-function severityColorVec(severity) {
-  if (severity === 'critical') return new THREE.Color('#ff4c4c')
-  if (severity === 'high') return new THREE.Color('#ff9500')
-  if (severity === 'medium') return new THREE.Color('#ffd60a')
-  return new THREE.Color('#52ffa8')
+function severityColorHex(severity) {
+  if (severity === 'critical') return 0xff4c4c
+  if (severity === 'high') return 0xff9500
+  if (severity === 'medium') return 0xffd60a
+  return 0x52ffa8
 }
 
 function formatLastSeen(ts) {
@@ -41,27 +41,100 @@ function buildArcPoints(fromLat, fromLon, toLat, toLon, radius, segments = 80) {
   const from = latLonToVec3(fromLat, fromLon, radius)
   const to = latLonToVec3(toLat, toLon, radius)
   const mid = from.clone().add(to).multiplyScalar(0.5)
-  const arcHeight = radius * 0.45
-  mid.setLength(mid.length() + arcHeight)
+  mid.setLength(mid.length() + radius * 0.5)
   const curve = new THREE.QuadraticBezierCurve3(from, mid, to)
   return curve.getPoints(segments)
 }
 
-function buildPulseRing(lat, lon, radius) {
-  const pos = latLonToVec3(lat, lon, radius + 0.01)
-  const geometry = new THREE.RingGeometry(0.008, 0.014, 32)
-  const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color('#67e8f9'),
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.85,
-    depthWrite: false,
-  })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.position.copy(pos)
-  mesh.lookAt(new THREE.Vector3(0, 0, 0))
-  mesh.rotateX(Math.PI / 2)
-  return mesh
+// Build globe texture using canvas — land polygons from Natural Earth simplified
+function buildGlobeTexture() {
+  const W = 2048
+  const H = 1024
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+
+  // Ocean
+  ctx.fillStyle = '#060f1a'
+  ctx.fillRect(0, 0, W, H)
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(103,232,249,0.07)'
+  ctx.lineWidth = 1
+  for (let lat = -80; lat <= 80; lat += 20) {
+    const y = ((90 - lat) / 180) * H
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
+  }
+  for (let lon = -180; lon <= 180; lon += 20) {
+    const x = ((lon + 180) / 360) * W
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke()
+  }
+
+  // Land masses — simplified polygons (equirectangular projection)
+  // Format: array of [lon, lat] pairs
+  ctx.fillStyle = '#0d2137'
+  ctx.strokeStyle = 'rgba(103,232,249,0.18)'
+  ctx.lineWidth = 1.5
+
+  function ll(lon, lat) {
+    return [((lon + 180) / 360) * W, ((90 - lat) / 180) * H]
+  }
+
+  function poly(coords) {
+    ctx.beginPath()
+    coords.forEach(([lon, lat], i) => {
+      const [x, y] = ll(lon, lat)
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+    })
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  // North America
+  poly([[-168,71],[-140,70],[-120,72],[-95,75],[-80,73],[-65,68],[-55,63],[-52,47],[-65,44],[-70,41],[-74,40],[-80,34],[-81,30],[-87,30],[-90,29],[-97,26],[-105,23],[-110,24],[-118,29],[-120,34],[-124,37],[-124,46],[-130,54],[-138,58],[-142,60],[-152,58],[-160,59],[-166,63],[-168,65]])
+  // Greenland
+  poly([[-70,76],[-55,82],[-20,83],[-18,76],[-30,70],[-45,68],[-60,68],[-70,72]])
+  // South America
+  poly([[-81,8],[-77,4],[-75,0],[-70,-5],[-50,-10],[-35,-8],[-35,-20],[-40,-22],[-45,-23],[-48,-28],[-50,-33],[-68,-55],[-75,-52],[-72,-42],[-65,-38],[-58,-35],[-52,-33],[-45,-23],[-40,-15],[-38,-10],[-35,-5],[-50,5],[-60,8],[-73,10],[-78,8],[-81,8]])
+  // Europe
+  poly([[10,58],[20,60],[28,70],[15,70],[5,62],[-2,58],[-5,48],[0,44],[5,43],[14,37],[18,40],[24,38],[28,41],[30,46],[24,48],[15,48],[10,48],[8,54],[10,58]])
+  // Scandinavia
+  poly([[5,58],[8,58],[15,60],[20,63],[25,68],[28,70],[20,70],[15,70],[10,62],[5,58]])
+  // Africa
+  poly([[-18,15],[-16,20],[-13,28],[0,30],[10,37],[15,37],[30,30],[35,22],[40,10],[42,2],[40,-5],[35,-17],[26,-33],[18,-35],[12,-18],[8,-5],[0,5],[-10,8],[-18,15]])
+  // Asia (simplified)
+  poly([[30,70],[60,75],[80,73],[100,70],[120,68],[140,68],[145,60],[140,46],[130,32],[120,22],[110,18],[100,2],[95,5],[88,22],[80,28],[68,23],[60,25],[50,28],[40,36],[30,40],[26,40],[28,46],[35,46],[40,55],[50,58],[60,68],[80,73]])
+  // Indian subcontinent
+  poly([[68,23],[72,22],[78,8],[80,12],[80,22],[76,28],[72,34],[66,30],[62,26],[68,23]])
+  // Southeast Asia
+  poly([[100,22],[108,18],[108,10],[104,2],[104,-2],[108,-5],[115,1],[120,5],[120,22],[108,18],[100,22]])
+  // Japan
+  poly([[130,32],[132,33],[135,35],[136,36],[134,34],[130,32]])
+  poly([[140,42],[142,44],[144,43],[141,40],[140,42]])
+  // Australia
+  poly([[114,-22],[118,-20],[128,-14],[136,-12],[140,-18],[148,-20],[152,-25],[152,-34],[148,-38],[144,-38],[136,-35],[128,-32],[118,-28],[114,-22]])
+  // New Zealand
+  poly([[172,-34],[174,-36],[174,-40],[172,-42],[170,-38],[172,-34]])
+  poly([[170,-44],[172,-44],[172,-46],[168,-46],[170,-44]])
+  // UK & Ireland
+  poly([[-5,50],[-3,51],[0,51],[2,52],[0,58],[-4,58],[-5,57],[-3,54],[-5,52],[-5,50]])
+  poly([[-10,51],[-8,55],[-6,55],[-6,52],[-10,51]])
+  // Iceland
+  poly([[-24,64],[-14,66],[-13,65],[-20,63],[-24,63],[-24,64]])
+  // Indonesia (simplified)
+  poly([[95,5],[100,2],[104,-2],[108,-7],[115,-8],[124,-8],[132,-4],[136,-4],[136,-2],[130,0],[124,1],[118,4],[110,4],[104,0],[100,2],[96,4],[95,5]])
+  // Philippines
+  poly([[118,18],[122,18],[126,8],[126,6],[122,10],[118,18]])
+  // Madagascar
+  poly([[44,-12],[50,-14],[50,-20],[46,-26],[44,-20],[44,-16],[44,-12]])
+  // Central America
+  poly([[-90,16],[-83,10],[-77,8],[-77,9],[-82,12],[-85,14],[-90,16]])
+  // Caribbean islands (Cuba)
+  poly([[-85,22],[-82,20],[-74,20],[-75,22],[-82,23],[-85,22]])
+
+  return new THREE.CanvasTexture(canvas)
 }
 
 export default function AttackWorldMap({ data }) {
@@ -73,10 +146,9 @@ export default function AttackWorldMap({ data }) {
   const arcsGroupRef = useRef(null)
   const ringsGroupRef = useRef(null)
   const arcProgressRef = useRef([])
-  const ringScalesRef = useRef([])
   const isDraggingRef = useRef(false)
   const prevMouseRef = useRef({ x: 0, y: 0 })
-  const rotationRef = useRef({ x: 0.4, y: 0 })
+  const rotationRef = useRef({ x: 0.15, y: 1.8 }) // start showing Americas
 
   const [activePoint, setActivePoint] = useState(null)
 
@@ -84,17 +156,13 @@ export default function AttackWorldMap({ data }) {
     const lat = Number(data?.destination?.location?.lat)
     const lon = Number(data?.destination?.location?.lon)
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
-      return {
-        label: data?.destination?.label || DEFAULT_DESTINATION.label,
-        location: { lat, lon },
-      }
+      return { label: data?.destination?.label || DEFAULT_DESTINATION.label, location: { lat, lon } }
     }
     return DEFAULT_DESTINATION
   }, [data])
 
   const visiblePoints = useMemo(() => (data?.points || []).slice(0, 24), [data])
 
-  // Init Three.js scene
   useEffect(() => {
     const el = mountRef.current
     if (!el) return
@@ -102,76 +170,39 @@ export default function AttackWorldMap({ data }) {
     const width = el.clientWidth || 700
     const height = el.clientHeight || 460
 
-    // Scene
     const scene = new THREE.Scene()
     sceneRef.current = scene
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000)
-    camera.position.z = 2.8
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 1000)
+    camera.position.z = 2.6
     cameraRef.current = camera
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(width, height)
     renderer.setClearColor(0x000000, 0)
     el.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
     // Lights
-    const ambient = new THREE.AmbientLight(0x67e8f9, 0.3)
-    scene.add(ambient)
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
-    dirLight.position.set(5, 3, 5)
-    scene.add(dirLight)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.9))
+    const dir = new THREE.DirectionalLight(0x67e8f9, 0.6)
+    dir.position.set(5, 3, 5)
+    scene.add(dir)
 
-    // Globe
+    // Globe with canvas texture
     const RADIUS = 1
+    const texture = buildGlobeTexture()
     const globeGeo = new THREE.SphereGeometry(RADIUS, 64, 64)
-    const loader = new THREE.TextureLoader()
-    const globeMat = new THREE.MeshPhongMaterial({
-      color: 0x08111d,
-      emissive: 0x001020,
-      specular: 0x1a3a5c,
-      shininess: 12,
-    })
-    loader.load(
-      'https://unpkg.com/three-globe@2.24.13/example/img/earth-dark.jpg',
-      (tex) => { globeMat.map = tex; globeMat.needsUpdate = true }
-    )
-    const globe = new THREE.Mesh(globeGeo, globeMat)
-    scene.add(globe)
+    const globeMat = new THREE.MeshPhongMaterial({ map: texture, specular: 0x112233, shininess: 8 })
+    scene.add(new THREE.Mesh(globeGeo, globeMat))
 
-    // Atmosphere glow
-    const atmGeo = new THREE.SphereGeometry(RADIUS * 1.06, 64, 64)
-    const atmMat = new THREE.MeshPhongMaterial({
-      color: 0x67e8f9,
-      transparent: true,
-      opacity: 0.06,
-      side: THREE.BackSide,
-      depthWrite: false,
-    })
+    // Atmosphere
+    const atmGeo = new THREE.SphereGeometry(RADIUS * 1.055, 64, 64)
+    const atmMat = new THREE.MeshPhongMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.07, side: THREE.BackSide, depthWrite: false })
     scene.add(new THREE.Mesh(atmGeo, atmMat))
 
-    // Grid lines (graticule approximation)
-    const gridMat = new THREE.LineBasicMaterial({ color: 0x1a3a5c, transparent: true, opacity: 0.25 })
-    for (let lat = -80; lat <= 80; lat += 20) {
-      const pts = []
-      for (let lon = -180; lon <= 180; lon += 3) {
-        pts.push(latLonToVec3(lat, lon, RADIUS + 0.001))
-      }
-      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMat))
-    }
-    for (let lon = -180; lon <= 180; lon += 20) {
-      const pts = []
-      for (let lat = -90; lat <= 90; lat += 3) {
-        pts.push(latLonToVec3(lat, lon, RADIUS + 0.001))
-      }
-      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMat))
-    }
-
-    // Groups for dynamic objects
+    // Groups
     const arcsGroup = new THREE.Group()
     const ringsGroup = new THREE.Group()
     scene.add(arcsGroup)
@@ -179,70 +210,62 @@ export default function AttackWorldMap({ data }) {
     arcsGroupRef.current = arcsGroup
     ringsGroupRef.current = ringsGroup
 
-    // Destination marker
-    const destPos = latLonToVec3(DEFAULT_DESTINATION.location.lat, DEFAULT_DESTINATION.location.lon, RADIUS + 0.01)
-    const destGeo = new THREE.SphereGeometry(0.018, 16, 16)
-    const destMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9 })
-    const destMesh = new THREE.Mesh(destGeo, destMat)
-    destMesh.position.copy(destPos)
-    scene.add(destMesh)
-
     // Destination pulse rings
     for (let i = 0; i < 3; i++) {
-      const r = buildPulseRing(DEFAULT_DESTINATION.location.lat, DEFAULT_DESTINATION.location.lon, RADIUS)
-      r.userData.pulseOffset = i * (Math.PI * 2 / 3)
-      r.userData.isDestRing = true
-      ringsGroup.add(r)
+      const geo = new THREE.RingGeometry(0.008, 0.016, 32)
+      const mat = new THREE.MeshBasicMaterial({ color: 0x67e8f9, side: THREE.DoubleSide, transparent: true, opacity: 0.8, depthWrite: false })
+      const mesh = new THREE.Mesh(geo, mat)
+      const pos = latLonToVec3(DEFAULT_DESTINATION.location.lat, DEFAULT_DESTINATION.location.lon, RADIUS + 0.01)
+      mesh.position.copy(pos)
+      mesh.lookAt(new THREE.Vector3(0, 0, 0))
+      mesh.rotateX(Math.PI / 2)
+      mesh.userData.isDestRing = true
+      mesh.userData.pulseOffset = i * (Math.PI * 2 / 3)
+      ringsGroup.add(mesh)
     }
 
-    // Resize observer
+    // Destination dot
+    const destDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.02, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0x67e8f9 })
+    )
+    destDot.position.copy(latLonToVec3(DEFAULT_DESTINATION.location.lat, DEFAULT_DESTINATION.location.lon, RADIUS + 0.015))
+    scene.add(destDot)
+
+    // Resize
     const ro = new ResizeObserver(() => {
-      const w = el.clientWidth
-      const h = el.clientHeight
-      if (w && h) {
-        renderer.setSize(w, h)
-        camera.aspect = w / h
-        camera.updateProjectionMatrix()
-      }
+      const w = el.clientWidth; const h = el.clientHeight
+      if (w && h) { renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix() }
     })
     ro.observe(el)
 
-    // Animation loop
+    // Animate
     let t = 0
     function animate() {
       frameRef.current = requestAnimationFrame(animate)
       t += 0.016
-
-      // Auto-rotate when not dragging
-      if (!isDraggingRef.current) {
-        rotationRef.current.y += 0.0015
-      }
+      if (!isDraggingRef.current) rotationRef.current.y += 0.0018
       scene.rotation.y = rotationRef.current.y
       scene.rotation.x = rotationRef.current.x
 
-      // Animate arc progress
-      arcProgressRef.current.forEach((state, i) => {
-        if (!state) return
+      arcProgressRef.current.forEach((state) => {
+        if (!state || state.progress >= 1) return
         state.progress = Math.min(1, state.progress + state.speed)
-        const { line, allPoints } = state
-        const count = Math.floor(state.progress * allPoints.length)
-        const pts = allPoints.slice(0, Math.max(2, count))
-        const geo = new THREE.BufferGeometry().setFromPoints(pts)
-        line.geometry.dispose()
-        line.geometry = geo
+        const count = Math.max(2, Math.floor(state.progress * state.allPoints.length))
+        const pts = state.allPoints.slice(0, count)
+        state.line.geometry.dispose()
+        state.line.geometry = new THREE.BufferGeometry().setFromPoints(pts)
+        if (state.glowLine) {
+          state.glowLine.geometry.dispose()
+          state.glowLine.geometry = new THREE.BufferGeometry().setFromPoints(pts)
+        }
       })
 
-      // Animate destination pulse rings
       ringsGroup.children.forEach((ring) => {
-        if (ring.userData.isDestRing) {
-          const s = 1 + 1.5 * ((Math.sin(t * 2 + ring.userData.pulseOffset) + 1) / 2)
-          ring.scale.setScalar(s)
-          ring.material.opacity = 0.6 * (1 - (s - 1) / 1.5)
-        } else if (ring.userData.isOriginRing) {
-          const s = 1 + 2.5 * ((Math.sin(t * 3 + ring.userData.pulseOffset) + 1) / 2)
-          ring.scale.setScalar(s)
-          ring.material.opacity = 0.7 * (1 - (s - 1) / 2.5)
-        }
+        const phase = (t * 1.8 + ring.userData.pulseOffset) % (Math.PI * 2)
+        const s = 1 + 2.2 * (phase / (Math.PI * 2))
+        ring.scale.setScalar(s)
+        ring.material.opacity = 0.75 * (1 - phase / (Math.PI * 2))
       })
 
       renderer.render(scene, camera)
@@ -252,108 +275,87 @@ export default function AttackWorldMap({ data }) {
     return () => {
       cancelAnimationFrame(frameRef.current)
       ro.disconnect()
+      texture.dispose()
       renderer.dispose()
       if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement)
     }
   }, [])
 
-  // Update arcs and rings when data changes
+  // Rebuild arcs when data changes
   useEffect(() => {
     const arcsGroup = arcsGroupRef.current
     const ringsGroup = ringsGroupRef.current
     if (!arcsGroup || !ringsGroup) return
+    const RADIUS = 1
 
-    // Clear old arcs
+    // Clear arcs
     while (arcsGroup.children.length) {
-      arcsGroup.children[0].geometry.dispose()
-      arcsGroup.children[0].material.dispose()
-      arcsGroup.remove(arcsGroup.children[0])
+      const c = arcsGroup.children[0]
+      c.geometry?.dispose(); c.material?.dispose(); arcsGroup.remove(c)
     }
-    // Clear origin rings (keep dest rings)
-    const toRemove = ringsGroup.children.filter(r => r.userData.isOriginRing)
-    toRemove.forEach(r => { r.geometry.dispose(); r.material.dispose(); ringsGroup.remove(r) })
-
+    // Clear origin rings
+    ringsGroup.children.filter(r => r.userData.isOriginRing).forEach(r => {
+      r.geometry?.dispose(); r.material?.dispose(); ringsGroup.remove(r)
+    })
     arcProgressRef.current = []
 
-    const RADIUS = 1
     visiblePoints.forEach((point, i) => {
-      const color = severityColorVec(point.severity)
-      const allPoints = buildArcPoints(
-        point.location.lat, point.location.lon,
-        destination.location.lat, destination.location.lon,
-        RADIUS
-      )
+      const col = severityColorHex(point.severity)
+      const allPoints = buildArcPoints(point.location.lat, point.location.lon, destination.location.lat, destination.location.lon, RADIUS)
 
-      // Glow line (wider, transparent)
-      const glowMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.18, linewidth: 3 })
+      // Glow
+      const glowMat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.15, linewidth: 1 })
       const glowLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(allPoints.slice(0, 2)), glowMat)
       arcsGroup.add(glowLine)
 
-      // Main arc line
-      const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, linewidth: 2 })
+      // Arc
+      const mat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9, linewidth: 2 })
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(allPoints.slice(0, 2)), mat)
       arcsGroup.add(line)
 
-      arcProgressRef.current.push({
-        line,
-        allPoints,
-        progress: 0,
-        speed: 0.012 + i * 0.0005,
-      })
+      arcProgressRef.current.push({ line, glowLine, allPoints, progress: (i * 0.04) % 1, speed: 0.014 + i * 0.0003 })
 
       // Origin dot
-      const dotGeo = new THREE.SphereGeometry(0.012, 10, 10)
-      const dotMat = new THREE.MeshBasicMaterial({ color })
-      const dot = new THREE.Mesh(dotGeo, dotMat)
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 8), new THREE.MeshBasicMaterial({ color: col }))
       dot.position.copy(latLonToVec3(point.location.lat, point.location.lon, RADIUS + 0.005))
       arcsGroup.add(dot)
 
-      // Origin pulse ring
-      const ring = buildPulseRing(point.location.lat, point.location.lon, RADIUS)
-      ring.material.color = color
+      // Origin ring
+      const ringGeo = new THREE.RingGeometry(0.006, 0.013, 24)
+      const ringMat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, transparent: true, opacity: 0.8, depthWrite: false })
+      const ring = new THREE.Mesh(ringGeo, ringMat)
+      ring.position.copy(latLonToVec3(point.location.lat, point.location.lon, RADIUS + 0.008))
+      ring.lookAt(new THREE.Vector3(0, 0, 0))
+      ring.rotateX(Math.PI / 2)
       ring.userData.isOriginRing = true
-      ring.userData.pulseOffset = i * 0.8
+      ring.userData.pulseOffset = i * 0.7
       ringsGroup.add(ring)
     })
   }, [visiblePoints, destination])
 
-  // Mouse drag to rotate
-  const onMouseDown = useCallback((e) => {
-    isDraggingRef.current = true
-    prevMouseRef.current = { x: e.clientX, y: e.clientY }
-  }, [])
+  const onMouseDown = useCallback((e) => { isDraggingRef.current = true; prevMouseRef.current = { x: e.clientX, y: e.clientY } }, [])
   const onMouseMove = useCallback((e) => {
     if (!isDraggingRef.current) return
-    const dx = e.clientX - prevMouseRef.current.x
-    const dy = e.clientY - prevMouseRef.current.y
-    rotationRef.current.y += dx * 0.005
-    rotationRef.current.x += dy * 0.005
-    rotationRef.current.x = Math.max(-1.2, Math.min(1.2, rotationRef.current.x))
+    rotationRef.current.y += (e.clientX - prevMouseRef.current.x) * 0.005
+    rotationRef.current.x = Math.max(-1.2, Math.min(1.2, rotationRef.current.x + (e.clientY - prevMouseRef.current.y) * 0.005))
     prevMouseRef.current = { x: e.clientX, y: e.clientY }
   }, [])
   const onMouseUp = useCallback(() => { isDraggingRef.current = false }, [])
 
-  // Cycle active point for tooltip
   useEffect(() => {
     if (!visiblePoints.length) return
     let idx = 0
-    const id = setInterval(() => {
-      idx = (idx + 1) % visiblePoints.length
-      setActivePoint(visiblePoints[idx])
-    }, 1600)
+    const id = setInterval(() => { idx = (idx + 1) % visiblePoints.length; setActivePoint(visiblePoints[idx]) }, 1600)
     return () => clearInterval(id)
   }, [visiblePoints])
 
   return (
     <div className="attack-world-wrap attack-world-wrap-kaspersky" style={{ position: 'relative' }}>
-      <div
-        className="attack-world-stage"
-        style={{ position: 'relative', width: '100%', height: '100%', minHeight: 460 }}
-      >
+      <div className="attack-world-stage" style={{ position: 'relative', width: '100%', height: '100%', minHeight: 460 }}>
         <div className="attack-world-live-badge">LIVE TELEMETRY 3D</div>
         <div
           ref={mountRef}
-          style={{ width: '100%', height: '100%', minHeight: 460, cursor: isDraggingRef.current ? 'grabbing' : 'grab' }}
+          style={{ width: '100%', height: '100%', minHeight: 460, cursor: 'grab' }}
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
@@ -363,22 +365,10 @@ export default function AttackWorldMap({ data }) {
 
       <div className="attack-world-overlay">
         <div className="attack-world-summary attack-world-summary-kaspersky">
-          <div>
-            <span>Eventos geolocalizados</span>
-            <strong>{data?.summary?.totalEvents ?? 0}</strong>
-          </div>
-          <div>
-            <span>Orígenes activos</span>
-            <strong>{visiblePoints.length}</strong>
-          </div>
-          <div>
-            <span>Top country</span>
-            <strong>{data?.summary?.topCountry ?? 'Unknown'}</strong>
-          </div>
-          <div>
-            <span>Destino</span>
-            <strong>{destination.label}</strong>
-          </div>
+          <div><span>Eventos geolocalizados</span><strong>{data?.summary?.totalEvents ?? 0}</strong></div>
+          <div><span>Orígenes activos</span><strong>{visiblePoints.length}</strong></div>
+          <div><span>Top country</span><strong>{data?.summary?.topCountry ?? 'Unknown'}</strong></div>
+          <div><span>Destino</span><strong>{destination.label}</strong></div>
         </div>
 
         <div className="attack-world-tooltip attack-world-tooltip-kaspersky">
@@ -393,7 +383,7 @@ export default function AttackWorldMap({ data }) {
               </div>
               <div className="attack-tip-row">Eventos: <strong>{activePoint.count}</strong></div>
               <div className="attack-tip-row">Host destino: <strong>{activePoint.targetHost || 'unknown-host'}</strong></div>
-              <div className="attack-tip-row">Severidad: <strong>{activePoint.severity}</strong></div>
+              <div className="attack-tip-row">Severidad: <strong style={{ color: severityColor(activePoint.severity) }}>{activePoint.severity}</strong></div>
               <div className="attack-tip-row">Último evento: <strong>{formatLastSeen(activePoint.lastSeen)}</strong></div>
             </>
           ) : (

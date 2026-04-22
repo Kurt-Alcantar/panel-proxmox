@@ -85,7 +85,7 @@ export class OverviewController {
       query: {
         bool: {
           filter: [
-            { range: { '@timestamp': { gt: fromIso, lte: toIso } } },
+            { range: { '@timestamp': { gte: fromIso, lte: toIso } } },
             { exists: { field: 'source.ip' } },
             { exists: { field: 'source.geo.location' } },
           ],

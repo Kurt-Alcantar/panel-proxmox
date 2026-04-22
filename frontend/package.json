@@ -8,11 +8,11 @@
   },
   "dependencies": {
     "d3-geo": "^3.1.1",
-    "globe.gl": "^2.30.0",
+    "globe.gl": "2.26.4",
     "next": "14.0.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-simple-maps": "^3.0.0",
-    "three": "^0.160.0"
+    "three": "0.155.0"
   }
 }

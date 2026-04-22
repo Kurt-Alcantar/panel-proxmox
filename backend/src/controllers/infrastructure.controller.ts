@@ -115,24 +115,13 @@ export class InfrastructureController {
         },
       })
     }
-
     if (userContext.isTenantUser) {
-      const orWhere: any[] = []
-
-      if (userContext.tenantId) {
-        orWhere.push({ tenant_id: userContext.tenantId })
-      }
-
-      if (userContext.tenantGroupId) {
-        orWhere.push({ tenant_group_id: userContext.tenantGroupId })
-      }
-
-      if (!orWhere.length) return null
+      if (!userContext.tenantId) return null
 
       return this.prisma.vm_inventory.findFirst({
         where: {
           vmid,
-          OR: orWhere,
+          tenant_id: userContext.tenantId,
         },
       })
     }
@@ -300,20 +289,10 @@ export class InfrastructureController {
 
     // tenant_user: SOLO sus VMs
     if (userContext.isTenantUser) {
-      const orWhere: any[] = []
-
-      if (userContext.tenantId) {
-        orWhere.push({ tenant_id: userContext.tenantId })
-      }
-
-      if (userContext.tenantGroupId) {
-        orWhere.push({ tenant_group_id: userContext.tenantGroupId })
-      }
-
-      if (!orWhere.length) return []
+      if (!userContext.tenantId) return []
 
       const vms = await this.prisma.vm_inventory.findMany({
-        where: { OR: orWhere },
+        where: { tenant_id: userContext.tenantId },
         orderBy: { vmid: 'asc' },
       })
 

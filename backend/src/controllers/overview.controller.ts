@@ -86,10 +86,22 @@ export class OverviewController {
         bool: {
           filter: [
             { range: { '@timestamp': { gt: fromIso, lte: toIso } } },
+            { exists: { field: 'source.ip' } },
+            { exists: { field: 'source.geo.location' } },
           ],
           should: [
             { term: { 'event.code': '4625' } },
             { term: { 'event.code': 4625 } },
+
+            { term: { 'event.code': '5152' } },
+            { term: { 'event.code': 5152 } },
+
+            { term: { 'event.code': '5157' } },
+            { term: { 'event.code': 5157 } },
+
+            { term: { 'event.code': '5156' } },
+            { term: { 'event.code': 5156 } },
+
             {
               bool: {
                 filter: [
@@ -99,17 +111,9 @@ export class OverviewController {
               },
             },
             {
-              bool: {
-                filter: [
-                  { term: { 'winlog.channel': 'Security' } },
-                  { term: { 'event.outcome': 'failure' } },
-                ],
-              },
-            },
-            {
               wildcard: {
                 'message.keyword': {
-                  value: '*failed*',
+                  value: '*blocked a packet*',
                   case_insensitive: true,
                 },
               },
@@ -117,19 +121,11 @@ export class OverviewController {
             {
               wildcard: {
                 'message.keyword': {
-                  value: '*authentication failure*',
+                  value: '*permitted a connection*',
                   case_insensitive: true,
                 },
               },
-            },
-            {
-              wildcard: {
-                'message.keyword': {
-                  value: '*invalid user*',
-                  case_insensitive: true,
-                },
-              },
-            },
+            }
           ],
           minimum_should_match: 1,
         },
@@ -152,7 +148,6 @@ export class OverviewController {
       ],
     }
   }
-
   private mapAttackEvent(hit: any) {
     const src = hit?._source || {}
     const ip = this.normalizeIp(this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'))
@@ -164,7 +159,12 @@ export class OverviewController {
     const eventCode = this.pick(src, 'event.code') ?? null
     const message = String(src.message || '')
     const severity =
+      eventCode === 5157 || eventCode === '5157' ? 'high' :
+      eventCode === 5152 || eventCode === '5152' ? 'medium' :
       eventCode === 4625 || eventCode === '4625' ? 'medium' :
+      eventCode === 5156 || eventCode === '5156' ? 'low' :
+      /blocked a packet/i.test(message) ? 'medium' :
+      /permitted a connection/i.test(message) ? 'low' :
       /invalid user|authentication failure/i.test(message) ? 'high' :
       'low'
 

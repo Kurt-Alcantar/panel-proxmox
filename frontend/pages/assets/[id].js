@@ -513,6 +513,15 @@ export default function AssetDetailPage() {
                   <div style={{ fontSize:11, color:'#b8abd9', marginTop:4 }}>{k.l}</div>
                 </div>
               ))}
+              {d.details.veeam.typeStats && [
+                { l:'Jobs normales', v:d.details.veeam.typeStats.normal24h, c:'#8b5cf6' },
+                { l:'Copy jobs', v:d.details.veeam.typeStats.copy24h, c:'#38bdf8' },
+              ].map(k => (
+                <div key={k.l} style={{ background:`${k.c}15`, border:`1px solid ${k.c}33`, borderRadius:10, padding:'10px 16px', textAlign:'center', minWidth:90 }}>
+                  <div style={{ fontSize:24, fontWeight:800, color:k.c, lineHeight:1 }}>{k.v??0}</div>
+                  <div style={{ fontSize:11, color:'#b8abd9', marginTop:4 }}>{k.l}</div>
+                </div>
+              ))}
             </div>
             {d.details.veeam.recentJobs?.length>0 && (
               <div style={{ overflowX:'auto' }}>

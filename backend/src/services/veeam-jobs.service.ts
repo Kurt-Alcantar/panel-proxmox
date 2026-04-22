@@ -10,7 +10,7 @@ const EVENT_CODES = {
   success:  ['490', '890'],
   warning:  ['190'],
   failed:   ['40700', '40100', '40101'],
-  progress: ['450'],
+  progress: ['450', '810', '250', '210'],
 }
 
 const ALL_RESULT_CODES = [
@@ -22,7 +22,9 @@ const ALL_RESULT_CODES = [
 
 const ALL_CODES = [...ALL_RESULT_CODES, ...EVENT_CODES.progress]
 
-// ─── Parsers de mensaje ──────────────────────────────────────────
+type JobType = 'normal' | 'copy'
+
+type ResultType = 'success' | 'warning' | 'failed' | 'started' | 'progress' | 'unknown'
 
 function extractJobName(msg: string): string | null {
   const m = msg?.match(/'([^']+)'/)
@@ -34,15 +36,10 @@ function extractVmName(msg: string): string | null {
   return m ? m[1] : null
 }
 
-// Extrae la causa raíz del mensaje multilinea de Veeam
-// Soporta:
-//   "Backup job 'X' finished with Warning.\nSome detail here"
-//   "VM x task has finished with 'Failed' state.\nTask details: Source restore point is locked by another job"
-//   "VM x task has finished with 'Failed' state.\nTask details: RPO violation...\nError: [AP] Can't run command..."
 function parseJobDetail(msg: string): { summary: string; taskDetail: string | null; errorDetail: string | null } {
   if (!msg) return { summary: '', taskDetail: null, errorDetail: null }
 
-  const lines = msg.split('\n').map(l => l.trim()).filter(Boolean)
+  const lines = msg.split('\n').map((l) => l.trim()).filter(Boolean)
   const summary = lines[0] || ''
   let taskDetail: string | null = null
   let errorDetail: string | null = null
@@ -53,7 +50,6 @@ function parseJobDetail(msg: string): { summary: string; taskDetail: string | nu
     } else if (line.startsWith('Error:')) {
       errorDetail = line.replace(/^Error:\s*/i, '').trim()
     } else if (!taskDetail && line.length > 0) {
-      // línea libre después del summary (e.g. en event 190 warning)
       taskDetail = line
     }
   }
@@ -61,16 +57,58 @@ function parseJobDetail(msg: string): { summary: string; taskDetail: string | nu
   return { summary, taskDetail, errorDetail }
 }
 
-function classifyResult(code: string, level: string): 'success' | 'warning' | 'failed' | 'started' | 'progress' | 'unknown' {
-  if (EVENT_CODES.failed.includes(code))   return 'failed'
-  if (EVENT_CODES.warning.includes(code))  return 'warning'
-  if (EVENT_CODES.success.includes(code))  return 'success'
-  if (EVENT_CODES.started.includes(code))  return 'started'
+function classifyResult(code: string, level: string): ResultType {
+  if (EVENT_CODES.failed.includes(code)) return 'failed'
+  if (EVENT_CODES.warning.includes(code)) return 'warning'
+  if (EVENT_CODES.success.includes(code)) return 'success'
+  if (EVENT_CODES.started.includes(code)) return 'started'
   if (EVENT_CODES.progress.includes(code)) return 'progress'
+
   const l = String(level || '').toLowerCase()
-  if (l === 'error')       return 'failed'
+  if (l === 'error') return 'failed'
   if (l.includes('advert') || l === 'warning') return 'warning'
   return 'unknown'
+}
+
+function classifyJobType(jobName: string | null, msg: string): JobType {
+  const j = String(jobName || '').toLowerCase()
+  const m = String(msg || '').toLowerCase()
+
+  if (
+    m.includes('backup copy job') ||
+    m.includes('backup copy') ||
+    m.includes('copy job') ||
+    m.includes('offsite') ||
+    m.includes('provider') ||
+    m.includes('cloud connect')
+  ) {
+    return 'copy'
+  }
+
+  if (
+    j.includes('backup copy') ||
+    j.includes(' copy ') ||
+    j.startsWith('copy-') ||
+    j.endsWith('-copy') ||
+    j.includes('bcj') ||
+    j.includes('provider') ||
+    j.includes('offsite') ||
+    j.includes('cloud')
+  ) {
+    return 'copy'
+  }
+
+  return 'normal'
+}
+
+function buildTypeStats(rows: any[]) {
+  return {
+    totalJobs: rows.length,
+    successJobs: rows.filter((r) => r.lastResult === 'success').length,
+    warningJobs: rows.filter((r) => r.lastResult === 'warning').length,
+    failedJobs: rows.filter((r) => r.lastResult === 'failed').length,
+    runningJobs: rows.filter((r) => ['started', 'progress'].includes(r.lastResult)).length,
+  }
 }
 
 @Injectable()
@@ -93,21 +131,8 @@ export class VeeamJobsService {
     return { range: { '@timestamp': { gte: `now-${hours}h`, lte: 'now' } } }
   }
 
-  private baseFilter(id: AssetIdentity) {
-    return {
-      bool: {
-        must: [
-          this.identity.buildElasticFilter(id),
-          { term: { 'winlog.channel': 'Veeam Backup' } },
-        ],
-      },
-    }
-  }
-
-  // ─── Overview ────────────────────────────────────────────────────
   async getJobsOverview(id: AssetIdentity, hours = 24) {
     const [kpiRes, eventsRes, trendRes] = await Promise.all([
-      // KPIs
       this.search({
         size: 0,
         query: {
@@ -132,7 +157,6 @@ export class VeeamJobsService {
           },
         },
       }),
-      // Eventos con detalle completo
       this.search({
         size: 150,
         sort: [{ '@timestamp': { order: 'desc' } }],
@@ -148,7 +172,6 @@ export class VeeamJobsService {
         },
         _source: ['@timestamp', 'message', 'event.code', 'log.level'],
       }),
-      // Tendencia
       this.search({
         size: 0,
         query: {
@@ -172,7 +195,7 @@ export class VeeamJobsService {
             aggs: {
               success: { filter: { terms: { 'event.code': EVENT_CODES.success } } },
               warning: { filter: { terms: { 'event.code': EVENT_CODES.warning } } },
-              failed:  { filter: { terms: { 'event.code': EVENT_CODES.failed  } } },
+              failed:  { filter: { terms: { 'event.code': EVENT_CODES.failed } } },
             },
           },
         },
@@ -183,12 +206,11 @@ export class VeeamJobsService {
     const kpis = {
       success: b.success?.doc_count || 0,
       warning: b.warning?.doc_count || 0,
-      failed:  b.failed?.doc_count  || 0,
+      failed: b.failed?.doc_count || 0,
       running: b.started?.doc_count || 0,
       total: (b.success?.doc_count || 0) + (b.warning?.doc_count || 0) + (b.failed?.doc_count || 0),
     }
 
-    // Procesar eventos con detalle parseado
     const rawEvents = (eventsRes?.hits?.hits || []).map((h: any) => {
       const src = h._source || {}
       const code = src?.event?.code || ''
@@ -196,30 +218,32 @@ export class VeeamJobsService {
       const msg = src?.message || ''
       const result = classifyResult(code, level)
       const { summary, taskDetail, errorDetail } = parseJobDetail(msg)
+      const jobName = extractJobName(msg)
+      const jobType = classifyJobType(jobName, msg)
 
       return {
         timestamp: src['@timestamp'],
         eventCode: code,
         result,
-        jobName: extractJobName(msg),
+        jobName,
+        jobType,
         vmName: extractVmName(msg),
         message: msg,
         summary,
         taskDetail,
         errorDetail,
-        // Causa raíz consolidada — lo más útil para mostrar en la UI
         rootCause: errorDetail || taskDetail || null,
         level,
       }
     })
 
-    // Agrupar por job — con detalle del último fallo/warning
     const jobMap = new Map<string, any>()
     for (const e of rawEvents) {
       if (!e.jobName) continue
       if (!jobMap.has(e.jobName)) {
         jobMap.set(e.jobName, {
           name: e.jobName,
+          type: e.jobType,
           lastTimestamp: e.timestamp,
           lastResult: e.result,
           lastMessage: e.summary,
@@ -227,20 +251,17 @@ export class VeeamJobsService {
           lastTaskDetail: null,
           lastErrorDetail: null,
           eventCode: e.eventCode,
-          // Errores por VM acumulados
           vmErrors: [],
         })
       }
       const entry = jobMap.get(e.jobName)
 
-      // Capturar causa raíz del último evento no-exitoso
       if (['failed', 'warning'].includes(e.result) && !entry.lastRootCause) {
         entry.lastRootCause = e.rootCause
         entry.lastTaskDetail = e.taskDetail
         entry.lastErrorDetail = e.errorDetail
       }
 
-      // Acumular errores por VM (event 450 con estado Failed)
       if (e.result === 'progress' && e.vmName && e.rootCause) {
         const existing = entry.vmErrors.find((ve: any) => ve.vm === e.vmName)
         if (!existing) {
@@ -256,23 +277,29 @@ export class VeeamJobsService {
     }
 
     const jobsSummary = Array.from(jobMap.values()).sort((a, b) =>
-      new Date(b.lastTimestamp).getTime() - new Date(a.lastTimestamp).getTime()
+      new Date(b.lastTimestamp).getTime() - new Date(a.lastTimestamp).getTime(),
     )
+    const normalJobs = jobsSummary.filter((j) => j.type === 'normal')
+    const copyJobs = jobsSummary.filter((j) => j.type === 'copy')
 
-    const trend = (trendRes?.aggregations?.over_time?.buckets || []).map((b: any) => ({
-      timestamp: b.key_as_string,
-      success: b.success?.doc_count || 0,
-      warning: b.warning?.doc_count || 0,
-      failed:  b.failed?.doc_count  || 0,
+    const trend = (trendRes?.aggregations?.over_time?.buckets || []).map((bucket: any) => ({
+      timestamp: bucket.key_as_string,
+      success: bucket.success?.doc_count || 0,
+      warning: bucket.warning?.doc_count || 0,
+      failed: bucket.failed?.doc_count || 0,
     }))
 
-    const lastFailed  = rawEvents.find(e => e.result === 'failed')  || null
-    const lastSuccess = rawEvents.find(e => e.result === 'success') || null
-    const lastWarning = rawEvents.find(e => e.result === 'warning') || null
+    const lastFailed = rawEvents.find((e) => e.result === 'failed') || null
+    const lastSuccess = rawEvents.find((e) => e.result === 'success') || null
+    const lastWarning = rawEvents.find((e) => e.result === 'warning') || null
 
     return {
       kpis,
       jobsSummary,
+      normalJobs,
+      copyJobs,
+      normalStats: buildTypeStats(normalJobs),
+      copyStats: buildTypeStats(copyJobs),
       recentEvents: rawEvents.slice(0, 30),
       trend,
       lastFailed,
@@ -282,7 +309,6 @@ export class VeeamJobsService {
     }
   }
 
-  // ─── Historial de un job con detalle completo ────────────────────
   async getJobHistory(id: AssetIdentity, jobName: string, days = 7) {
     const body = {
       size: 100,
@@ -308,6 +334,7 @@ export class VeeamJobsService {
       const level = src?.log?.level || ''
       const msg = src?.message || ''
       const { summary, taskDetail, errorDetail } = parseJobDetail(msg)
+      const extracted = extractJobName(msg)
       return {
         timestamp: src['@timestamp'],
         eventCode: code,
@@ -318,11 +345,11 @@ export class VeeamJobsService {
         errorDetail,
         rootCause: errorDetail || taskDetail || null,
         vmName: extractVmName(msg),
+        jobType: classifyJobType(extracted, msg),
       }
     })
   }
 
-  // ─── Lista de jobs con estadísticas ─────────────────────────────
   async listJobs(id: AssetIdentity, days = 7) {
     const body = {
       size: 200,
@@ -343,7 +370,7 @@ export class VeeamJobsService {
     const res = await this.search(body)
     const jobMap = new Map<string, any>()
 
-    for (const hit of (res?.hits?.hits || [])) {
+    for (const hit of res?.hits?.hits || []) {
       const src = hit._source || {}
       const code = src?.event?.code || ''
       const level = src?.log?.level || ''
@@ -352,11 +379,13 @@ export class VeeamJobsService {
       if (!jobName) continue
 
       const result = classifyResult(code, level)
-      const { summary, taskDetail, errorDetail } = parseJobDetail(msg)
+      const { taskDetail, errorDetail } = parseJobDetail(msg)
+      const jobType = classifyJobType(jobName, msg)
 
       if (!jobMap.has(jobName)) {
         jobMap.set(jobName, {
           name: jobName,
+          type: jobType,
           lastRun: src['@timestamp'],
           lastResult: result,
           lastRootCause: null,
@@ -370,12 +399,11 @@ export class VeeamJobsService {
       }
 
       const entry = jobMap.get(jobName)
-      entry.totalRuns++
-      if (result === 'success') entry.success++
-      else if (result === 'warning') entry.warning++
-      else if (result === 'failed') entry.failed++
+      entry.totalRuns += 1
+      if (result === 'success') entry.success += 1
+      else if (result === 'warning') entry.warning += 1
+      else if (result === 'failed') entry.failed += 1
 
-      // Guardar causa raíz del error/warning más reciente
       if (['failed', 'warning'].includes(result) && !entry.lastRootCause) {
         entry.lastRootCause = errorDetail || taskDetail || null
         entry.lastTaskDetail = taskDetail
@@ -383,8 +411,14 @@ export class VeeamJobsService {
       }
     }
 
-    return Array.from(jobMap.values()).sort((a, b) =>
-      new Date(b.lastRun).getTime() - new Date(a.lastRun).getTime()
+    const rows = Array.from(jobMap.values()).sort((a, b) =>
+      new Date(b.lastRun).getTime() - new Date(a.lastRun).getTime(),
     )
+
+    return {
+      all: rows,
+      normal: rows.filter((r) => r.type === 'normal'),
+      copy: rows.filter((r) => r.type === 'copy'),
+    }
   }
 }

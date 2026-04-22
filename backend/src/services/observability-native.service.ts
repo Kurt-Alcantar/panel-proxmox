@@ -308,6 +308,12 @@ export class ObservabilityNativeService {
     return 'unknown'
   }
 
+  private classifyVeeamJobType(message?: string) {
+    const msg = String(message || '').toLowerCase()
+    if (msg.includes('backup copy job') || msg.includes('backup copy') || msg.includes('copy job') || msg.includes('provider') || msg.includes('offsite') || msg.includes('cloud connect')) return 'copy'
+    return 'normal'
+  }
+
   async getVeeamOverview(id: AssetIdentity) {
     const baseFilter = [this.buildFilter(id), this.range24h()]
     const veeamShould = [
@@ -343,13 +349,19 @@ export class ObservabilityNativeService {
     const buckets = summary?.aggregations?.by_result?.buckets || {}
     const recentRows = (recentJobs?.hits?.hits || []).map((hit: any) => {
       const src = this.hitSource(hit)
-      return { timestamp: src['@timestamp'], result: this.classifyVeeamResult(src.message, this.pick(src, 'event.action'), this.pick(src, 'event.outcome')), action: this.pick(src, 'event.action'), outcome: this.pick(src, 'event.outcome'), serviceName: this.pick(src, 'service.name') || this.pick(src, 'process.name') || 'Veeam', sourceIp: this.pick(src, 'source.ip'), message: src.message || '-' }
+      const type = this.classifyVeeamJobType(src.message)
+      return { timestamp: src['@timestamp'], result: this.classifyVeeamResult(src.message, this.pick(src, 'event.action'), this.pick(src, 'event.outcome')), type, action: this.pick(src, 'event.action'), outcome: this.pick(src, 'event.outcome'), serviceName: this.pick(src, 'service.name') || this.pick(src, 'process.name') || 'Veeam', sourceIp: this.pick(src, 'source.ip'), message: src.message || '-' }
     })
+    const recentNormalJobs = recentRows.filter((r: any) => r.type === 'normal')
+    const recentCopyJobs = recentRows.filter((r: any) => r.type === 'copy')
     return {
       kpis: { success24h: buckets.success?.doc_count || 0, warning24h: buckets.warning?.doc_count || 0, failed24h: buckets.failed?.doc_count || 0, running24h: buckets.running?.doc_count || 0 },
+      typeStats: { normal24h: recentNormalJobs.length, copy24h: recentCopyJobs.length },
       lastRun: recentRows[0] || null,
       lastSuccess: recentRows.find((r: any) => r.result === 'success') || null,
       recentJobs: recentRows,
+      recentNormalJobs,
+      recentCopyJobs,
     }
   }
 

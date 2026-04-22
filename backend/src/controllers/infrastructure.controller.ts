@@ -31,13 +31,44 @@ export class InfrastructureController {
 
   private async getUserContext(keycloakId?: string) {
     if (!keycloakId) return null
-    const user = await this.prisma.users.findFirst({ where: { keycloak_id: keycloakId } })
+
+    const user = await this.prisma.users.findFirst({
+      where: { keycloak_id: keycloakId },
+    })
     if (!user) return null
+
     const roles = await this.prisma.$queryRaw<Array<{ code: string }>>`
-      SELECT r.code FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ${user.id}::uuid
+      SELECT r.code
+      FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = ${user.id}::uuid
     `
+
     const roleCodes = roles.map((row) => row.code)
-    return { user, roleCodes, isPlatformAdmin: roleCodes.includes('platform_admin') }
+    const isPlatformAdmin = roleCodes.includes('platform_admin')
+    const isPartnerAdmin = roleCodes.includes('partner_admin')
+    const isTenantUser = roleCodes.includes('tenant_user')
+
+    let tenantId: string | null = (user as any).tenant_id ?? null
+    const tenantGroupId: string | null = (user as any).tenant_group_id ?? null
+
+    if (!tenantId && tenantGroupId) {
+      const tenantGroup = await this.prisma.tenant_groups.findFirst({
+        where: { id: tenantGroupId },
+        select: { tenant_id: true },
+      })
+      tenantId = tenantGroup?.tenant_id ?? null
+    }
+
+    return {
+      user,
+      roleCodes,
+      isPlatformAdmin,
+      isPartnerAdmin,
+      isTenantUser,
+      tenantId,
+      tenantGroupId,
+    }
   }
 
   private async getAllowedPoolExternalIds(userContext: any) {
@@ -54,10 +85,34 @@ export class InfrastructureController {
   private async findAccessibleVm(vmid: number, keycloakId?: string) {
     const userContext = await this.getUserContext(keycloakId)
     if (!userContext) return null
-    if (userContext.isPlatformAdmin) return this.prisma.vm_inventory.findFirst({ where: { vmid } })
+
+    if (userContext.isPlatformAdmin) {
+      return this.prisma.vm_inventory.findFirst({ where: { vmid } })
+    }
+
+    const orWhere: any[] = []
+
     const poolNames = await this.getAllowedPoolExternalIds(userContext)
-    if (!poolNames?.length) return null
-    return this.prisma.vm_inventory.findFirst({ where: { vmid, pool_id: { in: poolNames } } })
+    if (poolNames?.length) {
+      orWhere.push({ pool_id: { in: poolNames } })
+    }
+
+    if (userContext.tenantId) {
+      orWhere.push({ tenant_id: userContext.tenantId })
+    }
+
+    if (userContext.tenantGroupId) {
+      orWhere.push({ tenant_group_id: userContext.tenantGroupId })
+    }
+
+    if (!orWhere.length) return null
+
+    return this.prisma.vm_inventory.findFirst({
+      where: {
+        vmid,
+        OR: orWhere,
+      },
+    })
   }
 
   // ─── RUTAS INFRA (renombradas /infra/vms) ─────────────────────────
@@ -148,27 +203,71 @@ export class InfrastructureController {
   async listVmsCompat(@Req() req: any) {
     const userContext = await this.getUserContext(req.user?.sub)
     if (!userContext) throw new UnauthorizedException()
+
     if (userContext.isPlatformAdmin) {
       const vms = await this.prisma.vm_inventory.findMany({ orderBy: { vmid: 'asc' } })
       return vms.map((vm) => this.serializeVm(vm))
     }
+
+    const orWhere: any[] = []
+
     const poolNames = await this.getAllowedPoolExternalIds(userContext)
-    if (!poolNames?.length) return []
-    const vms = await this.prisma.vm_inventory.findMany({ where: { pool_id: { in: poolNames } }, orderBy: { vmid: 'asc' } })
+    if (poolNames?.length) {
+      orWhere.push({ pool_id: { in: poolNames } })
+    }
+
+    if (userContext.tenantId) {
+      orWhere.push({ tenant_id: userContext.tenantId })
+    }
+
+    if (userContext.tenantGroupId) {
+      orWhere.push({ tenant_group_id: userContext.tenantGroupId })
+    }
+
+    if (!orWhere.length) return []
+
+    const vms = await this.prisma.vm_inventory.findMany({
+      where: { OR: orWhere },
+      orderBy: { vmid: 'asc' },
+    })
+
     return vms.map((vm) => this.serializeVm(vm))
   }
 
   @Get('my/vms')
   async myVMs(@Req() req: any) {
     const userContext = await this.getUserContext(req.user?.sub)
-    if (!userContext?.user) throw new UnauthorizedException('Usuario no encontrado')
+    if (!userContext?.user) {
+      throw new UnauthorizedException('Usuario no encontrado')
+    }
+
     if (userContext.isPlatformAdmin) {
       const vms = await this.prisma.vm_inventory.findMany({ orderBy: { vmid: 'asc' } })
       return vms.map((vm) => this.serializeVm(vm))
     }
+
+    const orWhere: any[] = []
+
     const poolNames = await this.getAllowedPoolExternalIds(userContext)
-    if (!poolNames?.length) return []
-    const vms = await this.prisma.vm_inventory.findMany({ where: { pool_id: { in: poolNames } }, orderBy: { vmid: 'asc' } })
+    if (poolNames?.length) {
+      orWhere.push({ pool_id: { in: poolNames } })
+    }
+
+    if (userContext.tenantId) {
+      orWhere.push({ tenant_id: userContext.tenantId })
+    }
+
+    if (userContext.tenantGroupId) {
+      orWhere.push({ tenant_group_id: userContext.tenantGroupId })
+    }
+
+    if (!orWhere.length) return []
+
+    const vms = await this.prisma.vm_inventory.findMany({
+      where: { OR: orWhere },
+      orderBy: { vmid: 'asc' },
+    })
+
     return vms.map((vm) => this.serializeVm(vm))
   }
 

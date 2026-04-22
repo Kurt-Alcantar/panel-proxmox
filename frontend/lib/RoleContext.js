@@ -29,7 +29,7 @@ export function useRole() {
 export const NAV_PERMISSIONS = {
   platform_admin: ['/overview', '/assets', '/alerts', '/vms', '/pools', '/fleet-agents', '/admin', '/support', '/settings'],
   partner_admin:  ['/overview', '/assets', '/alerts', '/vms', '/support', '/settings'],
-  tenant_user:    ['/overview', '/assets', '/support', '/settings'],
+  tenant_user:    ['/overview','/vms', '/assets', '/support', '/settings'],
 }
 
 export function canAccess(role, path) {

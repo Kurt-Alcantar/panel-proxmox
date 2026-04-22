@@ -309,9 +309,38 @@ export class AdminController {
     const code = String(body?.code || '').trim();
     const name = String(body?.name || '').trim();
     const status = String(body?.status || 'ACTIVE').trim();
+    const type = String(body?.type || 'client').trim();
+    const parentTenantId = this.toNullableString(body?.parent_tenant_id);
 
     if (!code || !name) {
       throw new BadRequestException('code y name son obligatorios');
+    }
+
+    if (!['platform', 'partner', 'client'].includes(type)) {
+      throw new BadRequestException(`Tipo de tenant inválido: ${type}`);
+    }
+
+    if (parentTenantId && !this.isUuid(parentTenantId)) {
+      throw new BadRequestException('parent_tenant_id inválido');
+    }
+
+    if (type === 'client' && !parentTenantId) {
+      throw new BadRequestException('Un tenant client debe tener parent_tenant_id');
+    }
+
+    if (type !== 'client' && parentTenantId) {
+      throw new BadRequestException('Solo un tenant client puede tener parent_tenant_id');
+    }
+
+    if (parentTenantId) {
+      const parentTenant = await this.prisma.tenants.findFirst({ where: { id: parentTenantId } });
+      if (!parentTenant) {
+        throw new BadRequestException('Tenant padre no encontrado');
+      }
+
+      if (!['partner', 'platform'].includes((parentTenant as any).type)) {
+        throw new BadRequestException('El tenant padre debe ser de tipo partner o platform');
+      }
     }
 
     const existing = await this.prisma.tenants.findFirst({ where: { code } });
@@ -320,7 +349,13 @@ export class AdminController {
     }
 
     const tenant = await this.prisma.tenants.create({
-      data: { code, name, status },
+      data: {
+        code,
+        name,
+        status,
+        type,
+        parent_tenant_id: parentTenantId,
+      },
     });
 
     await this.audit.log({
@@ -342,10 +377,46 @@ export class AdminController {
     const code = this.toNullableString(body?.code);
     const name = this.toNullableString(body?.name);
     const status = this.toNullableString(body?.status);
+    const type = this.toNullableString(body?.type);
+    const parentTenantId = body?.parent_tenant_id === null ? null : this.toNullableString(body?.parent_tenant_id);
 
     if (code && code !== existing.code) {
       const duplicate = await this.prisma.tenants.findFirst({ where: { code } });
       if (duplicate) throw new BadRequestException('Ya existe un tenant con ese code');
+    }
+
+    if (type !== undefined && type !== null && !['platform', 'partner', 'client'].includes(type)) {
+      throw new BadRequestException(`Tipo de tenant inválido: ${type}`);
+    }
+
+    if (parentTenantId && !this.isUuid(parentTenantId)) {
+      throw new BadRequestException('parent_tenant_id inválido');
+    }
+
+    const finalType = type ?? (existing as any).type;
+    const finalParentTenantId = parentTenantId !== undefined ? parentTenantId : (existing as any).parent_tenant_id;
+
+    if (finalType === 'client' && !finalParentTenantId) {
+      throw new BadRequestException('Un tenant client debe tener parent_tenant_id');
+    }
+
+    if (finalType !== 'client' && finalParentTenantId) {
+      throw new BadRequestException('Solo un tenant client puede tener parent_tenant_id');
+    }
+
+    if (finalParentTenantId) {
+      if (finalParentTenantId === tenantId) {
+        throw new BadRequestException('Un tenant no puede ser padre de sí mismo');
+      }
+
+      const parentTenant = await this.prisma.tenants.findFirst({ where: { id: finalParentTenantId } });
+      if (!parentTenant) {
+        throw new BadRequestException('Tenant padre no encontrado');
+      }
+
+      if (!['partner', 'platform'].includes((parentTenant as any).type)) {
+        throw new BadRequestException('El tenant padre debe ser de tipo partner o platform');
+      }
     }
 
     const updated = await this.prisma.tenants.update({
@@ -354,13 +425,20 @@ export class AdminController {
         ...(code !== undefined ? { code } : {}),
         ...(name !== undefined ? { name } : {}),
         ...(status !== undefined ? { status } : {}),
+        ...(type !== undefined ? { type } : {}),
+        ...(parentTenantId !== undefined ? { parent_tenant_id: parentTenantId } : {}),
       },
     });
 
-    await this.audit.log({ userId: admin.user.id, action: 'admin.update_tenant', target: tenantId, result: 'success' });
+    await this.audit.log({
+      userId: admin.user.id,
+      action: 'admin.update_tenant',
+      target: tenantId,
+      result: 'success',
+    });
+
     return updated;
   }
-
   @Delete('tenants/:tenantId')
   async deleteTenant(@Req() req: AuthenticatedRequest, @Param('tenantId') tenantId: string) {
     const admin = await this.getAdminContext(req.user?.sub);

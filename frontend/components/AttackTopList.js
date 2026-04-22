@@ -4,7 +4,7 @@ export default function AttackTopList({ data = null }) {
   return (
     <div className="attack-top-list">
       <div className="overview-card-head compact">
-        <h3>Top attacking IPs</h3>
+        <h3>Top attacking IPs · 24h</h3>
         <span className="ch-meta">{points.length} visibles</span>
       </div>
 

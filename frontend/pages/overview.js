@@ -3,7 +3,7 @@ import AttackWorldMap from '../components/AttackWorldMap'
 import AttackTopList from '../components/AttackTopList'
 import { useRouter } from 'next/router'
 import AppShell, { ShellIcon } from '../components/AppShell'
-import { apiJson } from '../lib/auth'
+import { apiEventStream, apiJson } from '../lib/auth'
 import { exportToCSV } from '../lib/panel'
 import { usePolling } from '../hooks/usePolling'
 
@@ -77,6 +77,8 @@ export default function OverviewPage() {
   const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(true)
   const [attackMap, setAttackMap] = useState(null)
+  const [liveAttackEvents, setLiveAttackEvents] = useState([])
+  const [liveMeta, setLiveMeta] = useState({ connected: false, lastPulseAt: null, lastError: null, liveWindowMs: 90000 })
   const [search, setSearch] = useState('')
   const [metric, setMetric] = useState('cpu')
 
@@ -112,7 +114,105 @@ export default function OverviewPage() {
 
   usePolling(fetchAttackMap, (data) => {
     if (data) setAttackMap(data)
-  }, 30000, true)
+  }, 60000, true)
+
+  useEffect(() => {
+    let cancelled = false
+    let retryTimer = null
+    let controller = null
+
+    const ttlMs = 90000
+
+    const connect = async () => {
+      controller = new AbortController()
+      setLiveMeta((prev) => ({ ...prev, connected: false, lastError: null, liveWindowMs: ttlMs }))
+
+      try {
+        await apiEventStream(`/api/overview/attack-map/live?windowSec=${Math.floor(ttlMs / 1000)}&pollMs=3000`, {
+          signal: controller.signal,
+          onOpen: () => {
+            if (cancelled) return
+            setLiveMeta((prev) => ({ ...prev, connected: true, lastError: null }))
+          },
+          onMessage: ({ event, data }) => {
+            if (cancelled) return
+
+            if (event === 'ready' || event === 'heartbeat') {
+              setLiveMeta((prev) => ({
+                ...prev,
+                connected: true,
+                lastPulseAt: data?.emittedAt || new Date().toISOString(),
+                liveWindowMs: (data?.liveWindowSec || Math.floor(ttlMs / 1000)) * 1000,
+              }))
+              return
+            }
+
+            if (event === 'error') {
+              setLiveMeta((prev) => ({ ...prev, connected: false, lastError: data?.message || 'stream error' }))
+              return
+            }
+
+            if (event !== 'snapshot') return
+
+            const emittedAt = data?.emittedAt || new Date().toISOString()
+            const incoming = Array.isArray(data?.events) ? data.events : []
+            setLiveMeta((prev) => ({
+              ...prev,
+              connected: true,
+              lastPulseAt: emittedAt,
+              liveWindowMs: (data?.liveWindowSec || Math.floor(ttlMs / 1000)) * 1000,
+            }))
+
+            setLiveAttackEvents((prev) => {
+              const now = Date.now()
+              const expiresBefore = now - ttlMs
+              const map = new Map()
+
+              prev.forEach((item) => {
+                const ts = new Date(item.timestamp || item.lastSeen || 0).getTime()
+                if (Number.isFinite(ts) && ts >= expiresBefore) {
+                  map.set(item.eventId || `${item.timestamp}:${item.ip}`, item)
+                }
+              })
+
+              incoming.forEach((item) => {
+                const key = item.eventId || `${item.timestamp}:${item.ip}`
+                map.set(key, item)
+              })
+
+              return Array.from(map.values())
+                .filter((item) => {
+                  const ts = new Date(item.timestamp || item.lastSeen || 0).getTime()
+                  return Number.isFinite(ts) && ts >= expiresBefore
+                })
+                .sort((a, b) => new Date(a.timestamp || a.lastSeen || 0).getTime() - new Date(b.timestamp || b.lastSeen || 0).getTime())
+                .slice(-120)
+            })
+          },
+          onError: (err) => {
+            console.error('overview attack-map live parse failed', err)
+          },
+        })
+      } catch (e) {
+        if (cancelled || e?.name === 'AbortError') return
+        console.error('overview attack-map live stream failed', e)
+        setLiveMeta((prev) => ({ ...prev, connected: false, lastError: e?.message || 'stream disconnected' }))
+      }
+
+      if (!cancelled) {
+        setLiveMeta((prev) => ({ ...prev, connected: false }))
+        retryTimer = window.setTimeout(connect, 2500)
+      }
+    }
+
+    connect()
+
+    return () => {
+      cancelled = true
+      if (retryTimer) window.clearTimeout(retryTimer)
+      controller?.abort()
+    }
+  }, [])
 
   const overview = useMemo(() => {
     const totalAssets     = assets.length
@@ -163,6 +263,48 @@ export default function OverviewPage() {
 
   const attackDiagnostics = attackMap?.diagnostics || null
 
+  const liveAttackMap = useMemo(() => {
+    const destination = attackMap?.destination || null
+    const totalEvents = liveAttackEvents.length
+    const grouped = new Map()
+    const countries = new Map()
+    let lastEventAt = null
+
+    for (const event of liveAttackEvents) {
+      const key = event.ip
+      countries.set(event.country || 'Unknown', (countries.get(event.country || 'Unknown') || 0) + 1)
+      const seen = grouped.get(key)
+      if (!seen) grouped.set(key, { ...event, count: 1 })
+      else {
+        seen.count += 1
+        if (new Date(event.timestamp || 0).getTime() > new Date(seen.lastSeen || 0).getTime()) {
+          seen.lastSeen = event.timestamp
+          seen.targetHost = event.targetHost
+          seen.severity = event.severity
+        }
+      }
+      if (!lastEventAt || new Date(event.timestamp || 0).getTime() > new Date(lastEventAt).getTime()) {
+        lastEventAt = event.timestamp
+      }
+    }
+
+    const topCountry = Array.from(countries.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
+
+    return {
+      destination,
+      events: liveAttackEvents,
+      streamConnected: liveMeta.connected,
+      liveWindowMs: liveMeta.liveWindowMs,
+      summary: {
+        totalEvents,
+        uniqueSourceIps: grouped.size,
+        topCountry,
+        lastEventAt,
+      },
+      diagnostics: attackDiagnostics,
+    }
+  }, [attackMap, attackDiagnostics, liveAttackEvents, liveMeta])
+
   return (
     <AppShell
       title="Infrastructure overview"
@@ -173,7 +315,7 @@ export default function OverviewPage() {
       navCounts={overview.navCounts}
       actions={
         <div className="overview-toolbar">
-          <span className="live-dot">LIVE · 30s</span>
+          <span className="live-dot">{liveMeta.connected ? 'LIVE · stream' : 'RECONNECTING'}</span>
           <button className="chip active">Last 24h</button>
           <button className="btn btn-secondary" onClick={handleExport}><ShellIcon name="export" /> Export</button>
           <button className="btn btn-primary" onClick={() => router.push('/admin')}><ShellIcon name="plus" /> Add asset</button>
@@ -185,10 +327,10 @@ export default function OverviewPage() {
       ) : (
         <div className="overview-page">
           <div className="overview-kpis-grid">
-            <KpiCard label="Managed assets"    value={overview.totalAssets}   sub={`${overview.onlineAssets} online`}    accent="rgba(168,139,250,0.95)" series={overview.cpuSeries.slice(-8)} />
-            <KpiCard label="Online agents"     value={`${overview.onlineAssets}/${overview.totalAssets}`} sub={`${pct(overview.onlineAssets, overview.totalAssets)}% uptime`} accent="rgba(74,222,128,0.95)" series={overview.memSeries.slice(-8)} />
+            <KpiCard label="Managed assets" value={overview.totalAssets} sub={`${overview.onlineAssets} online`} accent="rgba(168,139,250,0.95)" series={overview.cpuSeries.slice(-8)} />
+            <KpiCard label="Online agents" value={`${overview.onlineAssets}/${overview.totalAssets}`} sub={`${pct(overview.onlineAssets, overview.totalAssets)}% uptime`} accent="rgba(74,222,128,0.95)" series={overview.memSeries.slice(-8)} />
             <KpiCard label="Incidentes abiertos" value={overview.openIncidents} sub={`${overview.errorAssets} error · ${overview.offlineAssets} offline`} accent="rgba(250,204,21,0.95)" series={[]} />
-            <KpiCard label="VMs activas"       value={`${overview.runningVms}/${vms.length}`} sub="Proxmox running" accent="rgba(248,113,113,0.95)" series={[]} />
+            <KpiCard label="VMs activas" value={`${overview.runningVms}/${vms.length}`} sub="Proxmox running" accent="rgba(248,113,113,0.95)" series={[]} />
           </div>
 
           <div className="overview-main-grid">
@@ -222,10 +364,10 @@ export default function OverviewPage() {
               </div>
               <div className="overview-status-list">
                 {[
-                  ['Online',     overview.onlineAssets,    'var(--green)'],
-                  ['Error',      overview.errorAssets,     'var(--amber)'],
-                  ['Offline',    overview.offlineAssets,   'var(--red)'],
-                  ['Unenrolled', overview.unenrolledAssets,'var(--text-4)'],
+                  ['Online', overview.onlineAssets, 'var(--green)'],
+                  ['Error', overview.errorAssets, 'var(--amber)'],
+                  ['Offline', overview.offlineAssets, 'var(--red)'],
+                  ['Unenrolled', overview.unenrolledAssets, 'var(--text-4)'],
                 ].map(([label, value, color]) => (
                   <div key={label} className="status-bar-row">
                     <div className="status-bar-head"><span>{label}</span><span>{value}</span></div>
@@ -253,11 +395,11 @@ export default function OverviewPage() {
               <div className="overview-card-head">
                 <div>
                   <h3>Global attack map</h3>
-                  <span className="ch-meta">Failed auth / suspicious origins · last 24h</span>
+                  <span className="ch-meta">Live stream real · buffer 90s · ranking lateral 24h</span>
                 </div>
               </div>
 
-              {!attackMap?.points?.length ? (
+              {!liveAttackMap?.events?.length ? (
                 <div
                   style={{
                     minHeight: 420,
@@ -273,7 +415,7 @@ export default function OverviewPage() {
                     padding: '0 18px',
                   }}
                 >
-                  <div>Sin datos geolocalizados de ataques.</div>
+                  <div>Sin eventos live geolocalizados en la ventana activa.</div>
                   {attackDiagnostics?.matchedEvents > 0 && (
                     <div style={{ maxWidth: 760, lineHeight: 1.6 }}>
                       Se detectaron {attackDiagnostics.matchedEvents} eventos sospechosos, pero solo {attackDiagnostics.eventsWithGeo} contienen <code>source.geo.location</code>.
@@ -282,7 +424,7 @@ export default function OverviewPage() {
                   )}
                 </div>
               ) : (
-                <AttackWorldMap data={attackMap} />
+                <AttackWorldMap data={liveAttackMap} />
               )}
             </section>
 

@@ -74,6 +74,74 @@ export class OverviewController {
     }
   }
 
+  private buildAttackShouldClauses() {
+    return [
+      { term: { 'event.code': '4625' } },
+      { term: { 'event.code': 4625 } },
+
+      { term: { 'event.code': '5152' } },
+      { term: { 'event.code': 5152 } },
+
+      { term: { 'event.code': '5157' } },
+      { term: { 'event.code': 5157 } },
+
+      { term: { 'event.code': '5156' } },
+      { term: { 'event.code': 5156 } },
+
+      {
+        bool: {
+          filter: [
+            { term: { 'event.category': 'authentication' } },
+            { term: { 'event.outcome': 'failure' } },
+          ],
+        },
+      },
+      {
+        wildcard: {
+          'message.keyword': {
+            value: '*blocked a packet*',
+            case_insensitive: true,
+          },
+        },
+      },
+      {
+        wildcard: {
+          'message.keyword': {
+            value: '*permitted a connection*',
+            case_insensitive: true,
+          },
+        },
+      },
+    ]
+  }
+
+  private buildAttackBaseFilter(fromIso: string, toIso: string) {
+    return [
+      { range: { '@timestamp': { gte: fromIso, lte: toIso } } },
+      { exists: { field: 'source.ip' } },
+      { exists: { field: 'source.geo.location' } },
+    ]
+  }
+
+  private buildAttackSourceFields() {
+    return [
+      '@timestamp',
+      'source.ip',
+      'source.geo.location',
+      'source.geo.country_name',
+      'source.geo.city_name',
+      'host.name',
+      'destination.ip',
+      'event.code',
+      'event.outcome',
+      'event.category',
+      'message',
+      'winlog.channel',
+      'winlog.event_data.IpAddress',
+      'winlog.event_data.TargetUserName',
+    ]
+  }
+
   private buildAttackQuery(fromIso: string, toIso: string, size = 1000) {
     return {
       size,
@@ -84,70 +152,45 @@ export class OverviewController {
       ],
       query: {
         bool: {
-          filter: [
-            { range: { '@timestamp': { gte: fromIso, lte: toIso } } },
-            { exists: { field: 'source.ip' } },
-            { exists: { field: 'source.geo.location' } },
-          ],
-          should: [
-            { term: { 'event.code': '4625' } },
-            { term: { 'event.code': 4625 } },
-
-            { term: { 'event.code': '5152' } },
-            { term: { 'event.code': 5152 } },
-
-            { term: { 'event.code': '5157' } },
-            { term: { 'event.code': 5157 } },
-
-            { term: { 'event.code': '5156' } },
-            { term: { 'event.code': 5156 } },
-
-            {
-              bool: {
-                filter: [
-                  { term: { 'event.category': 'authentication' } },
-                  { term: { 'event.outcome': 'failure' } },
-                ],
-              },
-            },
-            {
-              wildcard: {
-                'message.keyword': {
-                  value: '*blocked a packet*',
-                  case_insensitive: true,
-                },
-              },
-            },
-            {
-              wildcard: {
-                'message.keyword': {
-                  value: '*permitted a connection*',
-                  case_insensitive: true,
-                },
-              },
-            }
-          ],
+          filter: this.buildAttackBaseFilter(fromIso, toIso),
+          should: this.buildAttackShouldClauses(),
           minimum_should_match: 1,
         },
       },
-      _source: [
-        '@timestamp',
-        'source.ip',
-        'source.geo.location',
-        'source.geo.country_name',
-        'source.geo.city_name',
-        'host.name',
-        'destination.ip',
-        'event.code',
-        'event.outcome',
-        'event.category',
-        'message',
-        'winlog.channel',
-        'winlog.event_data.IpAddress',
-        'winlog.event_data.TargetUserName',
-      ],
+      _source: this.buildAttackSourceFields(),
     }
   }
+
+  private buildAttackLiveQuery(
+    fromIso: string,
+    toIso: string,
+    size = 500,
+    searchAfter?: [string, string],
+  ) {
+    const body: any = {
+      size,
+      track_total_hits: true,
+      sort: [
+        { '@timestamp': { order: 'asc' } },
+        { _id: { order: 'asc' } },
+      ],
+      query: {
+        bool: {
+          filter: this.buildAttackBaseFilter(fromIso, toIso),
+          should: this.buildAttackShouldClauses(),
+          minimum_should_match: 1,
+        },
+      },
+      _source: this.buildAttackSourceFields(),
+    }
+
+    if (searchAfter) {
+      body.search_after = searchAfter
+    }
+
+    return body
+  }
+
   private mapAttackEvent(hit: any) {
     const src = hit?._source || {}
     const ip = this.normalizeIp(this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'))
@@ -158,6 +201,7 @@ export class OverviewController {
 
     const eventCode = this.pick(src, 'event.code') ?? null
     const message = String(src.message || '')
+
     const severity =
       eventCode === 5157 || eventCode === '5157' ? 'high' :
       eventCode === 5152 || eventCode === '5152' ? 'medium' :
@@ -187,6 +231,7 @@ export class OverviewController {
       username: this.pick(src, 'winlog.event_data.TargetUserName') || '',
       destinationIp: this.pick(src, 'destination.ip') || '',
       count: 1,
+      sort: Array.isArray(hit?.sort) ? hit.sort : null,
     }
   }
 
@@ -226,6 +271,54 @@ export class OverviewController {
     }
   }
 
+  private async queryAttackEventsLive(
+    fromIso: string,
+    toIso: string,
+    size = 500,
+    searchAfter?: [string, string],
+  ) {
+    const result = await this.elastic.search('logs-*', this.buildAttackLiveQuery(fromIso, toIso, size, searchAfter))
+    const hits = result?.hits?.hits || []
+    const totalMatched = typeof result?.hits?.total === 'object'
+      ? result.hits.total.value || 0
+      : Array.isArray(hits) ? hits.length : 0
+
+    const events: any[] = []
+    let eventsWithIp = 0
+    let eventsUsingWinlogIp = 0
+    let eventsWithGeo = 0
+    let lastSort: [string, string] | null = null
+
+    for (const hit of hits) {
+      const src = hit?._source || {}
+      const rawIp = this.normalizeIp(this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'))
+      if (!rawIp) continue
+      eventsWithIp++
+      if (this.pick(src, 'winlog.event_data.IpAddress') && !this.pick(src, 'source.ip')) {
+        eventsUsingWinlogIp++
+      }
+
+      const mapped = this.mapAttackEvent(hit)
+      if (!mapped) continue
+
+      eventsWithGeo++
+      events.push(mapped)
+
+      if (Array.isArray(hit?.sort) && hit.sort.length >= 2) {
+        lastSort = [String(hit.sort[0]), String(hit.sort[1])]
+      }
+    }
+
+    return {
+      totalMatched,
+      eventsWithIp,
+      eventsUsingWinlogIp,
+      eventsWithGeo,
+      events,
+      lastSort,
+    }
+  }
+
   @Get('metrics')
   async getMetrics(@Query('range') range = '24h', @Req() req: any) {
     const hours = range === '7d' ? 168 : range === '48h' ? 48 : 24
@@ -237,7 +330,7 @@ export class OverviewController {
           bool: {
             filter: [
               { range: { '@timestamp': { gte: `now-${hours}h`, lte: 'now' } } },
-              { terms: { 'data_stream.dataset': ['system.cpu', 'system.memory', 'system.network', 'system.filesystem'] } } ,
+              { terms: { 'data_stream.dataset': ['system.cpu', 'system.memory', 'system.network', 'system.filesystem'] } },
             ],
           },
         },
@@ -250,9 +343,9 @@ export class OverviewController {
               extended_bounds: { min: `now-${hours}h`, max: 'now' },
             },
             aggs: {
-              avg_cpu:  { avg: { field: 'system.cpu.total.pct' } },
-              avg_mem:  { avg: { field: 'system.memory.actual.used.pct' } },
-              avg_net:  { avg: { field: 'system.network.in.bytes' } },
+              avg_cpu: { avg: { field: 'system.cpu.total.pct' } },
+              avg_mem: { avg: { field: 'system.memory.actual.used.pct' } },
+              avg_net: { avg: { field: 'system.network.in.bytes' } },
               avg_disk: { avg: { field: 'system.filesystem.used.pct' } },
             },
           },
@@ -273,10 +366,10 @@ export class OverviewController {
         }).filter((v: any) => v !== null)
 
       return {
-        cpu:     { series: extract('avg_cpu'),  label: 'CPU %' },
-        memory:  { series: extract('avg_mem'),  label: 'Memory %' },
-        network: { series: extract('avg_net'),  label: 'Network KB/s' },
-        disk:    { series: extract('avg_disk'), label: 'Disk %' },
+        cpu: { series: extract('avg_cpu'), label: 'CPU %' },
+        memory: { series: extract('avg_mem'), label: 'Memory %' },
+        network: { series: extract('avg_net'), label: 'Network KB/s' },
+        disk: { series: extract('avg_disk'), label: 'Disk %' },
       }
     } catch {
       return { cpu: { series: [] }, memory: { series: [] }, network: { series: [] }, disk: { series: [] } }
@@ -327,12 +420,6 @@ export class OverviewController {
       const topCountry = Array.from(countryCounts.entries())
         .sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
 
-      if (queried.totalMatched > 0 && queried.events.length === 0) {
-        this.logger.warn(
-          `attack-map matched ${queried.totalMatched} events, ${queried.eventsWithIp} had IP, ${queried.eventsWithGeo} had source.geo.location. GeoIP enrichment is likely missing for these events.`,
-        )
-      }
-
       return {
         summary: {
           totalEvents: queried.events.length,
@@ -367,9 +454,11 @@ export class OverviewController {
     @Req() req: any,
     @Res() res: any,
   ) {
-    const windowSec = Math.max(30, Math.min(300, this.parseOptionalNumber(windowSecRaw, 90)))
+    const windowSec = Math.max(30, Math.min(600, this.parseOptionalNumber(windowSecRaw, 90)))
     const pollMs = Math.max(1500, Math.min(10000, this.parseOptionalNumber(pollMsRaw, 3000)))
-    let cursorIso = new Date(Date.now() - windowSec * 1000).toISOString()
+
+    const initialFromIso = new Date(Date.now() - windowSec * 1000).toISOString()
+    let lastSort: [string, string] | null = null
     let closed = false
 
     res.setHeader('Content-Type', 'text/event-stream')
@@ -386,17 +475,26 @@ export class OverviewController {
 
     const poll = async () => {
       const toIso = new Date().toISOString()
+
       try {
-        const queried = await this.queryAttackEvents(cursorIso, toIso, 500)
-        const events = queried.events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-        if (events.length > 0) {
-          cursorIso = events[events.length - 1].timestamp
-        } else {
-          cursorIso = toIso
+        const queried = await this.queryAttackEventsLive(
+          initialFromIso,
+          toIso,
+          500,
+          lastSort || undefined,
+        )
+
+        const events = queried.events.sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        )
+
+        if (queried.lastSort) {
+          lastSort = queried.lastSort
         }
 
         const countryCounts = new Map<string, number>()
         const hostCounts = new Map<string, number>()
+
         for (const event of events) {
           countryCounts.set(event.country, (countryCounts.get(event.country) || 0) + 1)
           hostCounts.set(event.targetHost, (hostCounts.get(event.targetHost) || 0) + 1)
@@ -406,7 +504,7 @@ export class OverviewController {
         const topTargetHost = Array.from(hostCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'unknown-host'
 
         send('snapshot', {
-          cursor: cursorIso,
+          cursor: lastSort,
           emittedAt: toIso,
           pollMs,
           liveWindowSec: windowSec,

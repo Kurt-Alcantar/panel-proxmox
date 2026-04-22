@@ -92,23 +92,22 @@ export default function OverviewPage() {
   }, [])
 
   const fetchMetrics = useCallback(async (signal) => {
-    const token = localStorage.getItem('token')
-    const res = await fetch('/api/overview/metrics?range=24h', {
-      headers: { Authorization: `Bearer ${token}` }, signal,
-    })
-    if (!res.ok) return null
-    return res.json()
+    try {
+      return await apiJson('/api/overview/metrics?range=24h', { signal })
+    } catch (e) {
+      console.error('overview metrics poll failed', e)
+      return null
+    }
   }, [])
   usePolling(fetchMetrics, (data) => { if (data) setMetrics(data) }, 30000, true)
-  
+
   const fetchAttackMap = useCallback(async (signal) => {
-  const token = localStorage.getItem('token')
-  const res = await fetch('/api/overview/attack-map?range=24h', {
-      headers: { Authorization: `Bearer ${token}` },
-      signal,
-    })
-    if (!res.ok) return null
-    return res.json()
+    try {
+      return await apiJson('/api/overview/attack-map?range=24h', { signal })
+    } catch (e) {
+      console.error('overview attack-map poll failed', e)
+      return null
+    }
   }, [])
 
   usePolling(fetchAttackMap, (data) => {
@@ -161,6 +160,8 @@ export default function OverviewPage() {
       ultimo_checkin: a.last_checkin_at,
     })), `overview-assets-${new Date().toISOString().slice(0, 10)}.csv`)
   }
+
+  const attackDiagnostics = attackMap?.diagnostics || null
 
   return (
     <AppShell
@@ -246,7 +247,7 @@ export default function OverviewPage() {
               </div>
             </aside>
           </div>
-          
+
           <div className="overview-attack-grid">
             <section className="card overview-attack-map-card">
               <div className="overview-card-head">
@@ -263,12 +264,22 @@ export default function OverviewPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    flexDirection: 'column',
+                    gap: 10,
                     color: 'var(--text-4)',
                     fontSize: 13,
                     fontFamily: 'var(--font-mono)',
+                    textAlign: 'center',
+                    padding: '0 18px',
                   }}
                 >
-                  Sin datos geolocalizados de ataques.
+                  <div>Sin datos geolocalizados de ataques.</div>
+                  {attackDiagnostics?.matchedEvents > 0 && (
+                    <div style={{ maxWidth: 760, lineHeight: 1.6 }}>
+                      Se detectaron {attackDiagnostics.matchedEvents} eventos sospechosos, pero solo {attackDiagnostics.eventsWithGeo} contienen <code>source.geo.location</code>.
+                      Revisa el enrichment GeoIP o el pipeline que copia <code>winlog.event_data.IpAddress</code> hacia <code>source.ip</code>.
+                    </div>
+                  )}
                 </div>
               ) : (
                 <AttackWorldMap data={attackMap} />

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common'
+import { Controller, Get, Logger, Query, Req, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '../guards/auth.guard'
 import { ElasticsearchService } from '../services/elasticsearch.service'
 import { AssetsService } from '../services/assets.service'
@@ -6,10 +6,58 @@ import { AssetsService } from '../services/assets.service'
 @Controller('overview')
 @UseGuards(AuthGuard)
 export class OverviewController {
+  private readonly logger = new Logger(OverviewController.name)
+
   constructor(
     private readonly elastic: ElasticsearchService,
     private readonly assets: AssetsService,
   ) {}
+
+  private pick(obj: any, path: string) {
+    return path.split('.').reduce((acc: any, key: string) => (acc == null ? undefined : acc[key]), obj)
+  }
+
+  private normalizeIp(raw: any): string | null {
+    if (raw == null) return null
+    const ip = String(raw).trim()
+    if (!ip || ip === '-' || ip.toLowerCase() === 'localhost') return null
+    return ip
+  }
+
+  private isPrivateOrLocalIp(ip: string): boolean {
+    if (/^10\./.test(ip)) return true
+    if (/^192\.168\./.test(ip)) return true
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)) return true
+    if (/^127\./.test(ip)) return true
+    if (/^169\.254\./.test(ip)) return true
+    if (ip === '::1') return true
+    if (/^fe80:/i.test(ip)) return true
+    if (/^fc/i.test(ip) || /^fd/i.test(ip)) return true
+    return false
+  }
+
+  private parseGeo(location: any): { lat: number; lon: number } | null {
+    if (!location) return null
+
+    if (typeof location?.lat === 'number' && typeof location?.lon === 'number') {
+      return { lat: location.lat, lon: location.lon }
+    }
+
+    if (Array.isArray(location) && location.length === 2) {
+      const [lon, lat] = location
+      if (typeof lat === 'number' && typeof lon === 'number') return { lat, lon }
+    }
+
+    if (typeof location === 'string') {
+      const parts = location.split(',').map((v) => Number(v.trim()))
+      if (parts.length === 2 && parts.every((v) => Number.isFinite(v))) {
+        const [lat, lon] = parts
+        return { lat, lon }
+      }
+    }
+
+    return null
+  }
 
   @Get('metrics')
   async getMetrics(@Query('range') range = '24h', @Req() req: any) {
@@ -73,22 +121,33 @@ export class OverviewController {
     const hours = range === '7d' ? 168 : range === '48h' ? 48 : 24
 
     const body = {
-      size: 0,
+      size: 1000,
+      track_total_hits: true,
+      sort: [{ '@timestamp': { order: 'desc' } }],
       query: {
         bool: {
           filter: [
             { range: { '@timestamp': { gte: `now-${hours}h`, lte: 'now' } } },
-            {
-              exists: { field: 'source.ip' },
-            },
-            {
-              exists: { field: 'source.geo.location' },
-            },
           ],
           should: [
             { term: { 'event.code': '4625' } },
             { term: { 'event.code': 4625 } },
-            { term: { 'event.outcome': 'failure' } },
+            {
+              bool: {
+                filter: [
+                  { term: { 'event.category': 'authentication' } },
+                  { term: { 'event.outcome': 'failure' } },
+                ],
+              },
+            },
+            {
+              bool: {
+                filter: [
+                  { term: { 'winlog.channel': 'Security' } },
+                  { term: { 'event.outcome': 'failure' } },
+                ],
+              },
+            },
             {
               wildcard: {
                 'message.keyword': {
@@ -115,99 +174,122 @@ export class OverviewController {
             },
           ],
           minimum_should_match: 1,
-          must_not: [
-            { regexp: { 'source.ip': '10\\..*' } },
-            { regexp: { 'source.ip': '192\\.168\\..*' } },
-            { regexp: { 'source.ip': '172\\.(1[6-9]|2[0-9]|3[0-1])\\..*' } },
-            { regexp: { 'source.ip': '127\\..*' } },
-          ],
         },
       },
-      aggs: {
-        attackers: {
-          terms: {
-            field: 'source.ip',
-            size: 100,
-            order: { _count: 'desc' },
-          },
-          aggs: {
-            latest: {
-              top_hits: {
-                size: 1,
-                sort: [{ '@timestamp': { order: 'desc' } }],
-                _source: {
-                  includes: [
-                    '@timestamp',
-                    'source.ip',
-                    'source.geo.location',
-                    'source.geo.country_name',
-                    'source.geo.city_name',
-                    'host.name',
-                    'destination.ip',
-                    'event.code',
-                    'event.outcome',
-                    'message',
-                  ],
-                },
-              },
-            },
-          },
-        },
-        countries: {
-          terms: {
-            field: 'source.geo.country_name.keyword',
-            size: 10,
-          },
-        },
-      },
+      _source: [
+        '@timestamp',
+        'source.ip',
+        'source.geo.location',
+        'source.geo.country_name',
+        'source.geo.city_name',
+        'host.name',
+        'destination.ip',
+        'event.code',
+        'event.outcome',
+        'event.category',
+        'message',
+        'winlog.channel',
+        'winlog.event_data.IpAddress',
+        'winlog.event_data.TargetUserName',
+      ],
     }
 
     try {
-      const result = await this.elastic.search('logs-*', body).catch(() => null)
-      const attackerBuckets = result?.aggregations?.attackers?.buckets || []
-      const countryBuckets = result?.aggregations?.countries?.buckets || []
+      const result = await this.elastic.search('logs-*', body)
+      const hits = result?.hits?.hits || []
+      const totalMatched = typeof result?.hits?.total === 'object'
+        ? result.hits.total.value || 0
+        : Array.isArray(hits) ? hits.length : 0
 
-      const points = attackerBuckets
-        .map((bucket: any) => {
-          const hit = bucket?.latest?.hits?.hits?.[0]?._source || {}
-          const geo = hit?.source?.geo?.location
-          const ip = hit?.source?.ip
+      const grouped = new Map<string, any>()
+      const countryCounts = new Map<string, number>()
+      let totalGeolocatedEvents = 0
+      let eventsWithIp = 0
+      let eventsUsingWinlogIp = 0
+      let eventsWithGeo = 0
 
-          if (!geo || !ip) return null
+      for (const hit of hits) {
+        const src = hit?._source || {}
+        const ip = this.normalizeIp(this.pick(src, 'source.ip') || this.pick(src, 'winlog.event_data.IpAddress'))
+        if (!ip) continue
 
-          const lat = typeof geo?.lat === 'number' ? geo.lat : null
-          const lon = typeof geo?.lon === 'number' ? geo.lon : null
-          if (lat == null || lon == null) return null
+        eventsWithIp++
+        if (this.pick(src, 'winlog.event_data.IpAddress') && !this.pick(src, 'source.ip')) {
+          eventsUsingWinlogIp++
+        }
 
-          return {
+        if (this.isPrivateOrLocalIp(ip)) continue
+
+        const geo = this.parseGeo(this.pick(src, 'source.geo.location'))
+        if (!geo) continue
+
+        eventsWithGeo++
+        totalGeolocatedEvents++
+
+        const country = this.pick(src, 'source.geo.country_name') || 'Unknown'
+        countryCounts.set(country, (countryCounts.get(country) || 0) + 1)
+
+        const existing = grouped.get(ip)
+        if (!existing) {
+          grouped.set(ip, {
             ip,
-            count: bucket.doc_count || 0,
-            country: hit?.source?.geo?.country_name || 'Unknown',
-            city: hit?.source?.geo?.city_name || '',
-            location: { lat, lon },
-            lastSeen: hit?.['@timestamp'] || null,
-            targetHost: hit?.host?.name || 'unknown-host',
-            severity:
-              bucket.doc_count >= 100 ? 'critical' :
-              bucket.doc_count >= 40 ? 'high' :
-              bucket.doc_count >= 10 ? 'medium' : 'low',
-            eventCode: hit?.event?.code ?? null,
-            outcome: hit?.event?.outcome ?? null,
-            message: hit?.message ?? '',
-          }
-        })
-        .filter(Boolean)
+            count: 1,
+            country,
+            city: this.pick(src, 'source.geo.city_name') || '',
+            location: geo,
+            lastSeen: src['@timestamp'] || null,
+            targetHost: this.pick(src, 'host.name') || 'unknown-host',
+            severity: 'low',
+            eventCode: this.pick(src, 'event.code') ?? null,
+            outcome: this.pick(src, 'event.outcome') ?? null,
+            message: src.message ?? '',
+          })
+          continue
+        }
 
-      const summary = {
-        totalEvents: attackerBuckets.reduce((acc: number, b: any) => acc + (b.doc_count || 0), 0),
-        uniqueSourceIps: points.length,
-        topCountry: countryBuckets[0]?.key || 'Unknown',
+        existing.count += 1
       }
 
-      return { summary, points }
-    } catch (e) {
+      const points = Array.from(grouped.values())
+        .map((point: any) => ({
+          ...point,
+          severity:
+            point.count >= 100 ? 'critical' :
+            point.count >= 40 ? 'high' :
+            point.count >= 10 ? 'medium' : 'low',
+        }))
+        .sort((a: any, b: any) => b.count - a.count)
+        .slice(0, 100)
+
+      const topCountry = Array.from(countryCounts.entries())
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
+
+      if (totalMatched > 0 && totalGeolocatedEvents === 0) {
+        this.logger.warn(
+          `attack-map matched ${totalMatched} events, ${eventsWithIp} had IP, ${eventsWithGeo} had source.geo.location. GeoIP enrichment is likely missing for these events.`,
+        )
+      }
+
+      return {
+        summary: {
+          totalEvents: totalGeolocatedEvents,
+          uniqueSourceIps: points.length,
+          topCountry,
+        },
+        diagnostics: {
+          matchedEvents: totalMatched,
+          eventsWithIp,
+          eventsUsingWinlogIp,
+          eventsWithGeo,
+          returnedPoints: points.length,
+        },
+        points,
+      }
+    } catch (e: any) {
+      this.logger.error(`attack-map query failed: ${e?.message || e}`)
       return {
         summary: { totalEvents: 0, uniqueSourceIps: 0, topCountry: 'Unknown' },
+        diagnostics: { matchedEvents: 0, eventsWithIp: 0, eventsUsingWinlogIp: 0, eventsWithGeo: 0, returnedPoints: 0 },
         points: [],
       }
     }

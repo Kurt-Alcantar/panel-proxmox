@@ -90,29 +90,54 @@ export class InfrastructureController {
       return this.prisma.vm_inventory.findFirst({ where: { vmid } })
     }
 
-    const orWhere: any[] = []
+    if (userContext.isPartnerAdmin) {
+      const orWhere: any[] = []
 
-    const poolNames = await this.getAllowedPoolExternalIds(userContext)
-    if (poolNames?.length) {
-      orWhere.push({ pool_id: { in: poolNames } })
+      const poolNames = await this.getAllowedPoolExternalIds(userContext)
+      if (poolNames?.length) {
+        orWhere.push({ pool_id: { in: poolNames } })
+      }
+
+      if (userContext.tenantId) {
+        orWhere.push({ tenant_id: userContext.tenantId })
+      }
+
+      if (userContext.tenantGroupId) {
+        orWhere.push({ tenant_group_id: userContext.tenantGroupId })
+      }
+
+      if (!orWhere.length) return null
+
+      return this.prisma.vm_inventory.findFirst({
+        where: {
+          vmid,
+          OR: orWhere,
+        },
+      })
     }
 
-    if (userContext.tenantId) {
-      orWhere.push({ tenant_id: userContext.tenantId })
+    if (userContext.isTenantUser) {
+      const orWhere: any[] = []
+
+      if (userContext.tenantId) {
+        orWhere.push({ tenant_id: userContext.tenantId })
+      }
+
+      if (userContext.tenantGroupId) {
+        orWhere.push({ tenant_group_id: userContext.tenantGroupId })
+      }
+
+      if (!orWhere.length) return null
+
+      return this.prisma.vm_inventory.findFirst({
+        where: {
+          vmid,
+          OR: orWhere,
+        },
+      })
     }
 
-    if (userContext.tenantGroupId) {
-      orWhere.push({ tenant_group_id: userContext.tenantGroupId })
-    }
-
-    if (!orWhere.length) return null
-
-    return this.prisma.vm_inventory.findFirst({
-      where: {
-        vmid,
-        OR: orWhere,
-      },
-    })
+    return null
   }
 
   // ─── RUTAS INFRA (renombradas /infra/vms) ─────────────────────────
@@ -246,29 +271,56 @@ export class InfrastructureController {
       return vms.map((vm) => this.serializeVm(vm))
     }
 
-    const orWhere: any[] = []
+    // partner_admin: visibilidad por pools/grupo
+    if (userContext.isPartnerAdmin) {
+      const orWhere: any[] = []
 
-    const poolNames = await this.getAllowedPoolExternalIds(userContext)
-    if (poolNames?.length) {
-      orWhere.push({ pool_id: { in: poolNames } })
+      const poolNames = await this.getAllowedPoolExternalIds(userContext)
+      if (poolNames?.length) {
+        orWhere.push({ pool_id: { in: poolNames } })
+      }
+
+      if (userContext.tenantId) {
+        orWhere.push({ tenant_id: userContext.tenantId })
+      }
+
+      if (userContext.tenantGroupId) {
+        orWhere.push({ tenant_group_id: userContext.tenantGroupId })
+      }
+
+      if (!orWhere.length) return []
+
+      const vms = await this.prisma.vm_inventory.findMany({
+        where: { OR: orWhere },
+        orderBy: { vmid: 'asc' },
+      })
+
+      return vms.map((vm) => this.serializeVm(vm))
     }
 
-    if (userContext.tenantId) {
-      orWhere.push({ tenant_id: userContext.tenantId })
+    // tenant_user: SOLO sus VMs
+    if (userContext.isTenantUser) {
+      const orWhere: any[] = []
+
+      if (userContext.tenantId) {
+        orWhere.push({ tenant_id: userContext.tenantId })
+      }
+
+      if (userContext.tenantGroupId) {
+        orWhere.push({ tenant_group_id: userContext.tenantGroupId })
+      }
+
+      if (!orWhere.length) return []
+
+      const vms = await this.prisma.vm_inventory.findMany({
+        where: { OR: orWhere },
+        orderBy: { vmid: 'asc' },
+      })
+
+      return vms.map((vm) => this.serializeVm(vm))
     }
 
-    if (userContext.tenantGroupId) {
-      orWhere.push({ tenant_group_id: userContext.tenantGroupId })
-    }
-
-    if (!orWhere.length) return []
-
-    const vms = await this.prisma.vm_inventory.findMany({
-      where: { OR: orWhere },
-      orderBy: { vmid: 'asc' },
-    })
-
-    return vms.map((vm) => this.serializeVm(vm))
+    return []
   }
 
   @Get('vms/:vmid')

@@ -387,3 +387,135 @@
     bottom: 12px;
   }
 }
+
+.attack-world-stage-real3d {
+  height: 520px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(39, 103, 170, 0.18), transparent 28%),
+    radial-gradient(circle at 50% 115%, rgba(37, 99, 235, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(2, 6, 13, 0.96), rgba(3, 9, 16, 0.98));
+}
+
+.attack-world-scanlines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.18;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(125, 211, 252, 0.05) 0px,
+      rgba(125, 211, 252, 0.05) 1px,
+      transparent 2px,
+      transparent 8px
+    );
+}
+
+.attack-world-legend {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(3, 8, 15, 0.72);
+  border: 1px solid rgba(103, 232, 249, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.attack-world-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #d7f7ff;
+}
+
+.attack-world-legend span::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.attack-world-legend .low { color: #52ffa8; }
+.attack-world-legend .medium { color: #ffd166; }
+.attack-world-legend .high { color: #ff9f43; }
+.attack-world-legend .critical { color: #ff4c4c; }
+
+.attack-world-summary-grid {
+  max-width: min(560px, calc(100% - 32px));
+}
+
+.attack-world-summary-grid > div {
+  min-width: 150px;
+}
+
+.attack-world-tooltip-real3d {
+  min-width: 340px;
+  max-width: 390px;
+  background: linear-gradient(180deg, rgba(4, 10, 18, 0.84), rgba(2, 7, 14, 0.9));
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.03),
+    0 16px 48px rgba(2, 8, 20, 0.5);
+}
+
+.attack-tip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.attack-tip-stat {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.attack-tip-stat span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+
+.attack-tip-stat strong {
+  display: block;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.45;
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.attack-tip-stat-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .attack-world-stage-real3d {
+    height: 420px;
+  }
+
+  .attack-world-legend {
+    left: 12px;
+    bottom: 12px;
+    right: 12px;
+    border-radius: 16px;
+  }
+}

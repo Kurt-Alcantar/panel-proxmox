@@ -19,6 +19,7 @@ import { AuditService } from '../services/audit.service';
 import { KeycloakAdminService } from '../services/keycloak-admin.service';
 import { PrismaService } from '../services/prisma.service';
 import { ProxmoxService } from '../services/proxmox.service';
+import { AssetsService } from '../services/assets.service';
 
 interface AuthenticatedRequest {
   user?: {
@@ -34,7 +35,9 @@ export class AdminController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly proxmox: ProxmoxService,
-    private readonly keycloakAdmin: KeycloakAdminService
+    private readonly keycloakAdmin: KeycloakAdminService,
+    private readonly assetsService: AssetsService
+
   ) {}
 
   private isUuid(value?: string) {
@@ -775,7 +778,69 @@ export class AdminController {
     await this.audit.log({ userId: admin.user.id, action: 'admin.delete_user', target: userId, result: 'success' });
     return { ok: true };
   }
+  @Post('assets/:assetId/assign')
+  async assignAssetToTenant(
+    @Req() req: AuthenticatedRequest,
+    @Param('assetId') assetId: string,
+    @Body() body: any,
+  ) {
+    const admin = await this.getAdminContext(req.user?.sub);
 
+    const tenantId =
+      this.toNullableString(body?.tenantId) ??
+      this.toNullableString(body?.tenant_id);
+
+    if (!assetId) {
+      throw new BadRequestException('assetId es obligatorio');
+    }
+
+    if (!tenantId || !this.isUuid(tenantId)) {
+      throw new BadRequestException('tenantId inválido');
+    }
+
+    const tenant = await this.prisma.tenants.findFirst({ where: { id: tenantId } });
+    if (!tenant) {
+      throw new BadRequestException('Tenant no encontrado');
+    }
+
+    if ((tenant as any).type !== 'client') {
+      throw new BadRequestException('Solo se puede asignar activos a tenants de tipo client');
+    }
+
+    const assignment = await this.assetsService.assignToTenant(assetId, tenantId, admin.user.id);
+
+    await this.audit.log({
+      userId: admin.user.id,
+      action: 'admin.assign_asset',
+      target: assetId,
+      result: `success:${tenantId}`,
+    });
+
+    return { ok: true, assignment };
+  }
+
+  @Delete('assets/:assetId/assign')
+  async unassignAssetFromTenant(
+    @Req() req: AuthenticatedRequest,
+    @Param('assetId') assetId: string,
+  ) {
+    const admin = await this.getAdminContext(req.user?.sub);
+
+    if (!assetId) {
+      throw new BadRequestException('assetId es obligatorio');
+    }
+
+    await this.assetsService.removeFromTenant(assetId);
+
+    await this.audit.log({
+      userId: admin.user.id,
+      action: 'admin.unassign_asset',
+      target: assetId,
+      result: 'success',
+    });
+
+    return { ok: true, assetId };
+  }
   @Patch('vms/:vmid')
   async updateVm(@Req() req: AuthenticatedRequest, @Param('vmid') vmid: string, @Body() body: any) {
     const admin = await this.getAdminContext(req.user?.sub);
